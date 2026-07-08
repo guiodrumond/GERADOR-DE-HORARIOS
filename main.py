@@ -23,31 +23,14 @@ def main():
     base.blocos = builder.build()
 
     print()
-    print("===== PADRÕES PEDAGÓGICOS =====")
+    print("===== MATEMÁTICA =====")
     print()
 
-    for padrao in base.padroes_pedagogicos:
+    for bloco in base.blocos:
 
-        print(
-            padrao.componente,
-            "|",
-            padrao.tipo,
-            "|",
-            padrao.valor
-        )
+        if "_MAT_" in bloco.id:
 
-        print()
-        print("===== FTP =====")
-        print()
-
-        for bloco in base.blocos:
-
-            if "FTP" in bloco.id:
-
-                print(
-                    bloco.id,
-                    bloco.tamanho
-                )
+            print(bloco.id)
 
 if __name__ == "__main__":
     main()

@@ -28,15 +28,14 @@ class PedagogicalBlockBuilder:
     def _tem_padrao(
         self,
         componente: str,
-        tipo: str
+        tipo: str,
     ):
 
         for padrao in self.base.padroes_pedagogicos:
 
             if (
                 padrao.componente == componente
-                and
-                padrao.tipo == tipo
+                and padrao.tipo == tipo
             ):
                 return True
 
@@ -45,19 +44,30 @@ class PedagogicalBlockBuilder:
     def _valor_padrao(
         self,
         componente: str,
-        tipo: str
+        tipo: str,
     ):
 
         for padrao in self.base.padroes_pedagogicos:
 
             if (
                 padrao.componente == componente
-                and
-                padrao.tipo == tipo
+                and padrao.tipo == tipo
             ):
                 return padrao.valor
 
         return None
+
+    def _numero_duplas_matematica(self):
+
+        valor = self._valor_padrao(
+            "MEST",
+            "DUPLAS",
+        )
+
+        if valor is None:
+            return 2
+
+        return int(valor)
 
     # =====================================================
     # PARES PEDAGÓGICOS
@@ -115,9 +125,6 @@ class PedagogicalBlockBuilder:
 
             sigla = esp.sigla.upper()
 
-            # Componentes pertencentes a pares
-            # serão criados depois
-
             if sigla in pares:
                 continue
 
@@ -131,11 +138,9 @@ class PedagogicalBlockBuilder:
                         turma=turma,
                         componentes=["PROJ"],
                         tamanho=4,
-
-                        # agora usando padrão
                         fixo=self._tem_padrao(
                             "PROJ",
-                            "FIXO"
+                            "FIXO",
                         ),
                     )
                 )
@@ -146,23 +151,29 @@ class PedagogicalBlockBuilder:
 
             if sigla == "MAT":
 
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_MAT_A",
-                        turma=turma,
-                        componentes=["MAT"],
-                        tamanho=2,
-                    )
+                numero_duplas = (
+                    self._numero_duplas_matematica()
                 )
 
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_MAT_B",
-                        turma=turma,
-                        componentes=["MAT"],
-                        tamanho=2,
+                for numero in range(
+                    numero_duplas
+                ):
+
+                    sufixo = chr(
+                        ord("A") + numero
                     )
-                )
+
+                    blocos.append(
+                        BlocoPedagogico(
+                            id=(
+                                f"{turma}_MAT_"
+                                f"{sufixo}"
+                            ),
+                            turma=turma,
+                            componentes=["MAT"],
+                            tamanho=2,
+                        )
+                    )
 
                 continue
 
@@ -182,8 +193,8 @@ class PedagogicalBlockBuilder:
                             turma=turma,
                             componentes=["FTP"],
                             tamanho=4,
-                )
-            )
+                        )
+                    )
 
                 elif turma_obj.padrao_ftp == "2+2":
 
@@ -193,8 +204,8 @@ class PedagogicalBlockBuilder:
                             turma=turma,
                             componentes=["FTP"],
                             tamanho=2,
-            )
-        )
+                        )
+                    )
 
                     blocos.append(
                         BlocoPedagogico(
@@ -202,10 +213,10 @@ class PedagogicalBlockBuilder:
                             turma=turma,
                             componentes=["FTP"],
                             tamanho=2,
-            )
-        )
+                        )
+                    )
 
-            continue                                
+                continue
 
             # GEOGRAFIA
 
