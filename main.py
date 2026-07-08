@@ -1,5 +1,3 @@
-from ortools.sat.python import cp_model
-
 from src.data.loader import ExcelLoader
 
 from src.builder.pedagogical_blocks import (
@@ -10,20 +8,16 @@ from src.solver.variables import (
     DecisionVariableBuilder,
 )
 
-from src.solver.constraints.block_assignment import (
-    BlockAssignmentConstraint,
+from src.solver.rules.parser import (
+    RuleParser,
 )
 
-from src.solver.constraints.turma_conflicts import (
-    TurmaConflictConstraint,
+from src.solver.rules.registry import (
+    RuleRegistry,
 )
 
-from src.solver.constraints.fixed_schedule import (
-    FixedScheduleConstraint,
-)
-
-from src.solver.scheduler import (
-    Scheduler,
+from src.solver.rules.engine import (
+    RuleEngine,
 )
 
 
@@ -42,238 +36,114 @@ def main():
 
     base = loader.load()
 
+    # =====================================
+    # BLOCOS PEDAGÓGICOS
+    # =====================================
+
     builder = PedagogicalBlockBuilder(
         base
     )
 
     base.blocos = builder.build()
 
-    variable_builder = DecisionVariableBuilder(
-        base
-    )
-
-    model, variables = variable_builder.build()
-
     # =====================================
-    # RESTRIÇÃO 1
-    # Cada bloco exatamente uma vez
+    # REGRAS PARAMETRIZADAS
     # =====================================
 
-    block_assignment = (
-        BlockAssignmentConstraint(
-            model,
-            variables,
-        )
-    )
+    parser = RuleParser()
 
-    total_block_assignment = (
-        block_assignment.build()
-    )
-
-    # =====================================
-    # RESTRIÇÃO 2
-    # Conflito de turma
-    # =====================================
-
-    turma_conflicts = (
-        TurmaConflictConstraint(
-            model,
-            variables,
-            base,
-        )
-    )
-
-    total_turma_conflicts = (
-        turma_conflicts.build()
-    )
-
-    # =====================================
-    # RESTRIÇÃO 3
-    # Horários fixos parametrizados
-    # =====================================
-
-    fixed_schedule = (
-        FixedScheduleConstraint(
-            model,
-            variables,
-            base,
-        )
-    )
-
-    total_fixed_schedule = (
-        fixed_schedule.build()
-    )
-
-    # =====================================
-    # SOLVER
-    # =====================================
-
-    scheduler = Scheduler(
-        model
-    )
-
-    solver, status = (
-        scheduler.solve()
-    )
-
-    # =====================================
-    # RESUMO
-    # =====================================
-
-    print()
-    print("===== RESUMO CP-SAT =====")
-    print()
-
-    print(
-        "Turmas:",
-        len(base.turmas)
-    )
-
-    print(
-        "Blocos:",
-        len(base.blocos)
-    )
-
-    print(
-        "Slots:",
-        len(base.slots)
-    )
-
-    total_variaveis = 0
-
-    for bloco_id in variables:
-
-        total_variaveis += len(
-            variables[bloco_id]
-        )
-
-    print(
-        "Variáveis CP-SAT:",
-        total_variaveis
+    regras = parser.parse(
+        base.restricoes
     )
 
     print()
-    print("===== RESTRIÇÕES =====")
+    print("===== REGRAS PARAMETRIZADAS =====")
     print()
 
-    print(
-        "Block Assignment:",
-        total_block_assignment
-    )
-
-    print(
-        "Turma Conflict:",
-        total_turma_conflicts
-    )
-
-    print(
-        "Fixed Schedule:",
-        total_fixed_schedule
-    )
-
-    print(
-        "Total de restrições:",
-        total_block_assignment
-        + total_turma_conflicts
-        + total_fixed_schedule
-    )
-
-    # =====================================
-    # STATUS
-    # =====================================
-
-    print()
-    print("===== SOLVER =====")
-    print()
-
-    if status == cp_model.OPTIMAL:
+    for regra in regras:
 
         print(
-            "STATUS: OPTIMAL"
+            regra.alvo,
+            "|",
+            regra.tipo,
+            "|",
+            regra.valor,
         )
 
-    elif status == cp_model.FEASIBLE:
+    # =====================================
+    # TIPOS SUPORTADOS
+    # =====================================
+
+    print()
+    print("===== TIPOS SUPORTADOS =====")
+    print()
+
+    for tipo in RuleRegistry.supported_types():
+
+        print(tipo)
+
+    # =====================================
+    # VARIÁVEIS CP-SAT
+    # =====================================
+
+    variable_builder = (
+        DecisionVariableBuilder(
+            base
+        )
+    )
+
+    model, variables = (
+        variable_builder.build()
+    )
+
+    # =====================================
+    # RULE ENGINE
+    # =====================================
+
+    rule_engine = RuleEngine(
+        model=model,
+        variables=variables,
+        base=base,
+        regras=regras,
+    )
+
+    rule_engine.build()
+
+    resumo = (
+        rule_engine.resumo()
+    )
+
+    print()
+    print("===== RULE ENGINE =====")
+    print()
+
+    print(
+        "Regras aplicadas:",
+        resumo["aplicadas"]
+    )
+
+    print(
+        "Regras pendentes:",
+        resumo["pendentes"]
+    )
+
+    print()
+    print("===== DIAGNÓSTICO =====")
+    print()
+
+    for item in resumo["diagnostico"]:
 
         print(
-            "STATUS: FEASIBLE"
+            item["alvo"],
+            "|",
+            item["tipo"],
+            "|",
+            item["valor"],
+            "|",
+            item["status"],
+            "|",
+            item["restricoes_criadas"],
         )
-
-    elif status == cp_model.INFEASIBLE:
-
-        print(
-            "STATUS: INFEASIBLE"
-        )
-
-    else:
-
-        print(
-            "STATUS:",
-            status
-        )
-
-    # =====================================
-    # PROJETOS
-    # =====================================
-
-    if status in (
-        cp_model.OPTIMAL,
-        cp_model.FEASIBLE,
-    ):
-
-        print()
-        print("===== PROJETOS =====")
-        print()
-
-        for bloco_id, slots in variables.items():
-
-            if "_PROJ" not in bloco_id:
-                continue
-
-            for slot_id, variavel in slots.items():
-
-                if solver.BooleanValue(
-                    variavel
-                ):
-
-                    print(
-                        bloco_id,
-                        "->",
-                        slot_id
-                    )
-
-    # =====================================
-    # PRIMEIRAS ALOCAÇÕES
-    # =====================================
-
-    if status in (
-        cp_model.OPTIMAL,
-        cp_model.FEASIBLE,
-    ):
-
-        print()
-        print("===== PRIMEIRAS ALOCAÇÕES =====")
-        print()
-
-        contador = 0
-
-        for bloco_id, slots in variables.items():
-
-            for slot_id, variavel in slots.items():
-
-                if solver.BooleanValue(
-                    variavel
-                ):
-
-                    print(
-                        bloco_id,
-                        "->",
-                        slot_id
-                    )
-
-                    contador += 1
-
-                    if contador >= 30:
-                        return
 
 
 if __name__ == "__main__":

@@ -178,3 +178,14 @@ class BlocoPedagogico:
     tamanho: int
 
     fixo: bool = False
+
+@dataclass(frozen=True)
+class RegraParametrizada:
+
+    alvo: str
+
+    tipo: str
+
+    valor: str
+
+    regra_original: str
