@@ -30,11 +30,19 @@ from src.solver.scheduler import (
     Scheduler,
 )
 
+from src.solver.rules.stats import (
+    SolverStats,
+)
+
 
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
 
 def main():
+
+    # =====================================
+    # CARREGAMENTO
+    # =====================================
 
     print()
     print("===== CARREGANDO BASE =====")
@@ -47,7 +55,7 @@ def main():
     base = loader.load()
 
     # =====================================
-    # BLOCOS
+    # CONSTRUÇÃO DOS BLOCOS
     # =====================================
 
     builder = PedagogicalBlockBuilder(
@@ -57,7 +65,7 @@ def main():
     base.blocos = builder.build()
 
     # =====================================
-    # REGRAS PARAMETRIZADAS
+    # PARSER DE REGRAS
     # =====================================
 
     parser = RuleParser()
@@ -91,9 +99,7 @@ def main():
         regras=regras,
     )
 
-    total_rule_engine = (
-        rule_engine.build()
-    )
+    rule_engine.build()
 
     resumo_regras = (
         rule_engine.resumo()
@@ -127,52 +133,22 @@ def main():
     )
 
     # =====================================
-    # SOLVER
+    # ESTATÍSTICAS
     # =====================================
 
-    scheduler = Scheduler(
-        model
+    stats = SolverStats(
+        base=base,
+        variables=variables,
+        resumo_regras=resumo_regras,
+        total_block_assignment=total_block_assignment,
+        total_turma_conflicts=total_turma_conflicts,
     )
 
-    solver, status = (
-        scheduler.solve()
-    )
+    stats.imprimir()
 
     # =====================================
-    # RESUMO
+    # DIAGNÓSTICO DAS REGRAS
     # =====================================
-
-    print()
-    print("===== RESUMO CP-SAT =====")
-    print()
-
-    print(
-        "Turmas:",
-        len(base.turmas)
-    )
-
-    print(
-        "Blocos:",
-        len(base.blocos)
-    )
-
-    print(
-        "Slots:",
-        len(base.slots)
-    )
-
-    total_variaveis = 0
-
-    for bloco_id in variables:
-
-        total_variaveis += len(
-            variables[bloco_id]
-        )
-
-    print(
-        "Variáveis CP-SAT:",
-        total_variaveis
-    )
 
     print()
     print("===== RULE ENGINE =====")
@@ -206,6 +182,10 @@ def main():
             item["restricoes_criadas"],
         )
 
+    # =====================================
+    # CONSTRAINTS BASE
+    # =====================================
+
     print()
     print("===== CONSTRAINTS BASE =====")
     print()
@@ -218,6 +198,18 @@ def main():
     print(
         "Turma Conflict:",
         total_turma_conflicts
+    )
+
+    # =====================================
+    # SOLVER
+    # =====================================
+
+    scheduler = Scheduler(
+        model
+    )
+
+    solver, status = (
+        scheduler.solve()
     )
 
     print()
@@ -275,7 +267,7 @@ def main():
                     print(
                         bloco_id,
                         "->",
-                        slot_id
+                        slot_id,
                     )
 
                     contador += 1
