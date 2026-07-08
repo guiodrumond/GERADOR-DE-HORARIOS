@@ -1,11 +1,15 @@
 from src.data.loader import ExcelLoader
 
 from src.builder.pedagogical_blocks import (
-    PedagogicalBlockBuilder
+    PedagogicalBlockBuilder,
 )
 
 from src.solver.variables import (
-    DecisionVariableBuilder
+    DecisionVariableBuilder,
+)
+
+from src.solver.constraints.block_assignment import (
+    BlockAssignmentConstraint,
 )
 
 
@@ -32,67 +36,21 @@ def main():
 
     model, variables = variable_builder.build()
 
+    constraint = BlockAssignmentConstraint(
+        model,
+        variables,
+    )
+
+    total_restricoes = constraint.build()
+
     print()
-    print("===== RESUMO CP-SAT =====")
+    print("===== RESTRIÇÕES =====")
     print()
 
     print(
-        "Turmas:",
-        len(base.turmas)
+        "Block Assignment:",
+        total_restricoes,
     )
-
-    print(
-        "Blocos:",
-        len(base.blocos)
-    )
-
-    print(
-        "Slots:",
-        len(base.slots)
-    )
-
-    total_variaveis = 0
-
-    for bloco_id in variables:
-
-        total_variaveis += len(
-            variables[bloco_id]
-        )
-
-    print(
-        "Variáveis CP-SAT:",
-        total_variaveis
-    )
-
-    print()
-    print("===== AMOSTRA DE VARIÁVEIS =====")
-    print()
-
-    contador = 0
-
-    for bloco_id, slots in variables.items():
-
-        print(
-            bloco_id,
-            "->",
-            len(slots),
-            "slots possíveis"
-        )
-
-        primeiros_slots = list(
-            slots.keys()
-        )[:5]
-
-        print(
-            "   ",
-            primeiros_slots
-        )
-
-        contador += 1
-
-        if contador == 10:
-            break
-
 
 if __name__ == "__main__":
     main()
