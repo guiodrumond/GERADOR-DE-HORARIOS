@@ -1,21 +1,26 @@
 from src.data.loader import ExcelLoader
 
 from src.builder.pedagogical_blocks import (
-    PedagogicalBlockBuilder
+    PedagogicalBlockBuilder,
 )
 
 from src.solver.variables import (
-    DecisionVariableBuilder
+    DecisionVariableBuilder,
 )
 
 from src.solver.constraints.block_assignment import (
-    BlockAssignmentConstraint
+    BlockAssignmentConstraint,
 )
 
 from src.solver.constraints.turma_conflicts import (
-    TurmaConflictConstraint
+    TurmaConflictConstraint,
 )
 
+from ortools.sat.python import cp_model
+
+from src.solver.scheduler import (
+    Scheduler,
+)
 
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
@@ -61,6 +66,18 @@ def main():
 
     total_turma_conflicts = (
         turma_conflicts.build()
+    )
+
+    # =====================================
+    # SOLVER
+    # =====================================
+
+    scheduler = Scheduler(
+        model
+    )
+
+    solver, status = (
+        scheduler.solve()
     )
 
     print()
@@ -114,6 +131,56 @@ def main():
         total_block_assignment
         + total_turma_conflicts
     )
+
+    print()
+    print("===== SOLVER =====")
+    print()
+
+    if status == cp_model.OPTIMAL:
+
+        print("STATUS: OPTIMAL")
+
+    elif status == cp_model.FEASIBLE:
+
+        print("STATUS: FEASIBLE")
+
+    elif status == cp_model.INFEASIBLE:
+
+        print("STATUS: INFEASIBLE")
+
+    else:
+
+        print("STATUS:", status)
+
+    if status in (
+        cp_model.OPTIMAL,
+        cp_model.FEASIBLE,
+    ):
+
+        print()
+        print("===== PRIMEIRAS ALOCAÇÕES =====")
+        print()
+
+        contador = 0
+
+        for bloco_id, slots in variables.items():
+
+            for slot_id, variavel in slots.items():
+
+                if solver.BooleanValue(
+                    variavel
+                ):
+
+                    print(
+                        bloco_id,
+                        "->",
+                        slot_id
+                    )
+
+                    contador += 1
+
+                    if contador >= 30:
+                        return
 
 
 if __name__ == "__main__":
