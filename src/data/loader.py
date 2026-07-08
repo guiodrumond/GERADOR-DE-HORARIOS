@@ -9,7 +9,8 @@ from src.domain.models import (
     Especialidade,
     ParPedagogico,
     PadraoPedagogico,
-    Slot
+    Slot,
+    Restricao
 )
 
 
@@ -269,6 +270,7 @@ class ExcelLoader:
             pares_pedagogicos=self.load_pares_pedagogicos(),
             padroes_pedagogicos=self.load_padroes_pedagogicos(),
             slots=self.load_slots(),
+            restricoes=self.load_restricoes(),
         )
     
     def load_slots(self):
@@ -289,3 +291,26 @@ class ExcelLoader:
             )
 
         return slots
+    
+    # ==========================================================
+    # RESTRIÇÕES
+    # ==========================================================
+
+    def load_restricoes(self):
+
+        restricoes = []
+
+        for row in self._linhas("RESTRICOES"):
+
+            restricoes.append(
+                Restricao(
+                    regra=self._texto(
+                        row["Regra"]
+                    ),
+                    valor=self._texto(
+                        row["Valor"]
+                    ),
+                )
+            )
+
+        return restricoes

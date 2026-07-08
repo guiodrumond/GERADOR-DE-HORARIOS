@@ -4,6 +4,11 @@ from src.domain.models import (
     Curso,
     Turma,
     Especialidade,
+    ParPedagogico,
+    PadraoPedagogico,
+    BlocoPedagogico,
+    Slot,
+    Restricao,
 )
 
 
@@ -22,17 +27,8 @@ class BaseDados:
 
     padroes_pedagogicos: list[PadraoPedagogico]
 
+    restricoes: list[Restricao]
+
+    slots: list[Slot]
+
     blocos: list[BlocoPedagogico] | None = None
-
-    slots: list[Slot] | None = None
-
-
-from src.domain.models import (
-    Curso,
-    Turma,
-    Especialidade,
-    BlocoPedagogico,
-    ParPedagogico,
-    PadraoPedagogico,
-    Slot
-)

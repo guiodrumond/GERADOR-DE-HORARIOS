@@ -1,3 +1,5 @@
+from ortools.sat.python import cp_model
+
 from src.data.loader import ExcelLoader
 
 from src.builder.pedagogical_blocks import (
@@ -16,11 +18,14 @@ from src.solver.constraints.turma_conflicts import (
     TurmaConflictConstraint,
 )
 
-from ortools.sat.python import cp_model
+from src.solver.constraints.fixed_schedule import (
+    FixedScheduleConstraint,
+)
 
 from src.solver.scheduler import (
     Scheduler,
 )
+
 
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
@@ -49,23 +54,54 @@ def main():
 
     model, variables = variable_builder.build()
 
-    block_assignment = BlockAssignmentConstraint(
-        model,
-        variables,
+    # =====================================
+    # RESTRIÇÃO 1
+    # Cada bloco exatamente uma vez
+    # =====================================
+
+    block_assignment = (
+        BlockAssignmentConstraint(
+            model,
+            variables,
+        )
     )
 
     total_block_assignment = (
         block_assignment.build()
     )
 
-    turma_conflicts = TurmaConflictConstraint(
-        model,
-        variables,
-        base,
+    # =====================================
+    # RESTRIÇÃO 2
+    # Conflito de turma
+    # =====================================
+
+    turma_conflicts = (
+        TurmaConflictConstraint(
+            model,
+            variables,
+            base,
+        )
     )
 
     total_turma_conflicts = (
         turma_conflicts.build()
+    )
+
+    # =====================================
+    # RESTRIÇÃO 3
+    # Horários fixos parametrizados
+    # =====================================
+
+    fixed_schedule = (
+        FixedScheduleConstraint(
+            model,
+            variables,
+            base,
+        )
+    )
+
+    total_fixed_schedule = (
+        fixed_schedule.build()
     )
 
     # =====================================
@@ -79,6 +115,10 @@ def main():
     solver, status = (
         scheduler.solve()
     )
+
+    # =====================================
+    # RESUMO
+    # =====================================
 
     print()
     print("===== RESUMO CP-SAT =====")
@@ -127,10 +167,20 @@ def main():
     )
 
     print(
+        "Fixed Schedule:",
+        total_fixed_schedule
+    )
+
+    print(
         "Total de restrições:",
         total_block_assignment
         + total_turma_conflicts
+        + total_fixed_schedule
     )
+
+    # =====================================
+    # STATUS
+    # =====================================
 
     print()
     print("===== SOLVER =====")
@@ -138,19 +188,62 @@ def main():
 
     if status == cp_model.OPTIMAL:
 
-        print("STATUS: OPTIMAL")
+        print(
+            "STATUS: OPTIMAL"
+        )
 
     elif status == cp_model.FEASIBLE:
 
-        print("STATUS: FEASIBLE")
+        print(
+            "STATUS: FEASIBLE"
+        )
 
     elif status == cp_model.INFEASIBLE:
 
-        print("STATUS: INFEASIBLE")
+        print(
+            "STATUS: INFEASIBLE"
+        )
 
     else:
 
-        print("STATUS:", status)
+        print(
+            "STATUS:",
+            status
+        )
+
+    # =====================================
+    # PROJETOS
+    # =====================================
+
+    if status in (
+        cp_model.OPTIMAL,
+        cp_model.FEASIBLE,
+    ):
+
+        print()
+        print("===== PROJETOS =====")
+        print()
+
+        for bloco_id, slots in variables.items():
+
+            if "_PROJ" not in bloco_id:
+                continue
+
+            for slot_id, variavel in slots.items():
+
+                if solver.BooleanValue(
+                    variavel
+                ):
+
+                    print(
+                        bloco_id,
+                        "->",
+                        slot_id
+                    )
+
+    # =====================================
+    # PRIMEIRAS ALOCAÇÕES
+    # =====================================
 
     if status in (
         cp_model.OPTIMAL,
