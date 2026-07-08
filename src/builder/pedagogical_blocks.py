@@ -10,19 +10,58 @@ class PedagogicalBlockBuilder:
 
         self.base = base
 
-    def build(self):
-
-        blocos = []
+    def _buscar_turma(self, codigo: str):
 
         for turma in self.base.turmas:
 
-            blocos.extend(
-                self._build_turma(
-                    turma.codigo
-                )
-            )
+            if turma.codigo == codigo:
+                return turma
 
-        return blocos
+        raise ValueError(
+            f"Turma não encontrada: {codigo}"
+        )
+
+    # =====================================================
+    # PADRÕES PEDAGÓGICOS
+    # =====================================================
+
+    def _tem_padrao(
+        self,
+        componente: str,
+        tipo: str
+    ):
+
+        for padrao in self.base.padroes_pedagogicos:
+
+            if (
+                padrao.componente == componente
+                and
+                padrao.tipo == tipo
+            ):
+                return True
+
+        return False
+
+    def _valor_padrao(
+        self,
+        componente: str,
+        tipo: str
+    ):
+
+        for padrao in self.base.padroes_pedagogicos:
+
+            if (
+                padrao.componente == componente
+                and
+                padrao.tipo == tipo
+            ):
+                return padrao.valor
+
+        return None
+
+    # =====================================================
+    # PARES PEDAGÓGICOS
+    # =====================================================
 
     def _componentes_em_pares(self):
 
@@ -40,21 +79,43 @@ class PedagogicalBlockBuilder:
 
         return componentes
 
+    # =====================================================
+    # BUILD GERAL
+    # =====================================================
+
+    def build(self):
+
+        blocos = []
+
+        for turma in self.base.turmas:
+
+            blocos.extend(
+                self._build_turma(
+                    turma.codigo
+                )
+            )
+
+        return blocos
+
+    # =====================================================
+    # BUILD POR TURMA
+    # =====================================================
+
     def _build_turma(self, turma: str):
 
         blocos = []
 
         pares = self._componentes_em_pares()
 
-        # =====================================================
-        # ESPECIALIDADES INDIVIDUAIS
-        # =====================================================
+        # -------------------------------------------------
+        # Componentes individuais
+        # -------------------------------------------------
 
         for esp in self.base.especialidades:
 
             sigla = esp.sigla.upper()
 
-            # Componentes que pertencem a pares
+            # Componentes pertencentes a pares
             # serão criados depois
 
             if sigla in pares:
@@ -70,7 +131,12 @@ class PedagogicalBlockBuilder:
                         turma=turma,
                         componentes=["PROJ"],
                         tamanho=4,
-                        fixo=True,
+
+                        # agora usando padrão
+                        fixo=self._tem_padrao(
+                            "PROJ",
+                            "FIXO"
+                        ),
                     )
                 )
 
@@ -104,16 +170,42 @@ class PedagogicalBlockBuilder:
 
             if sigla == "FTP":
 
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_FTP",
-                        turma=turma,
-                        componentes=["FTP"],
-                        tamanho=4,
-                    )
+                turma_obj = self._buscar_turma(
+                    turma
                 )
 
-                continue
+                if turma_obj.padrao_ftp == "BLOCO4":
+
+                    blocos.append(
+                        BlocoPedagogico(
+                            id=f"{turma}_FTP",
+                            turma=turma,
+                            componentes=["FTP"],
+                            tamanho=4,
+                )
+            )
+
+                elif turma_obj.padrao_ftp == "2+2":
+
+                    blocos.append(
+                        BlocoPedagogico(
+                            id=f"{turma}_FTP_A",
+                            turma=turma,
+                            componentes=["FTP"],
+                            tamanho=2,
+            )
+        )
+
+                    blocos.append(
+                        BlocoPedagogico(
+                            id=f"{turma}_FTP_B",
+                            turma=turma,
+                            componentes=["FTP"],
+                            tamanho=2,
+            )
+        )
+
+            continue                                
 
             # GEOGRAFIA
 
@@ -190,9 +282,9 @@ class PedagogicalBlockBuilder:
 
                 continue
 
-        # =====================================================
-        # PARES PEDAGÓGICOS
-        # =====================================================
+        # -------------------------------------------------
+        # Pares pedagógicos
+        # -------------------------------------------------
 
         for par in self.base.pares_pedagogicos:
 
@@ -214,9 +306,9 @@ class PedagogicalBlockBuilder:
                 )
             )
 
-        # =====================================================
-        # PORTUGUÊS
-        # =====================================================
+        # -------------------------------------------------
+        # Português
+        # -------------------------------------------------
 
         blocos.append(
             BlocoPedagogico(
