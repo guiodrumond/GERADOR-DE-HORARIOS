@@ -1,15 +1,19 @@
 from src.data.loader import ExcelLoader
 
 from src.builder.pedagogical_blocks import (
-    PedagogicalBlockBuilder,
+    PedagogicalBlockBuilder
 )
 
 from src.solver.variables import (
-    DecisionVariableBuilder,
+    DecisionVariableBuilder
 )
 
 from src.solver.constraints.block_assignment import (
-    BlockAssignmentConstraint,
+    BlockAssignmentConstraint
+)
+
+from src.solver.constraints.turma_conflicts import (
+    TurmaConflictConstraint
 )
 
 
@@ -22,11 +26,15 @@ def main():
     print("===== CARREGANDO BASE =====")
     print()
 
-    loader = ExcelLoader(ARQUIVO)
+    loader = ExcelLoader(
+        ARQUIVO
+    )
 
     base = loader.load()
 
-    builder = PedagogicalBlockBuilder(base)
+    builder = PedagogicalBlockBuilder(
+        base
+    )
 
     base.blocos = builder.build()
 
@@ -36,12 +44,56 @@ def main():
 
     model, variables = variable_builder.build()
 
-    constraint = BlockAssignmentConstraint(
+    block_assignment = BlockAssignmentConstraint(
         model,
         variables,
     )
 
-    total_restricoes = constraint.build()
+    total_block_assignment = (
+        block_assignment.build()
+    )
+
+    turma_conflicts = TurmaConflictConstraint(
+        model,
+        variables,
+        base,
+    )
+
+    total_turma_conflicts = (
+        turma_conflicts.build()
+    )
+
+    print()
+    print("===== RESUMO CP-SAT =====")
+    print()
+
+    print(
+        "Turmas:",
+        len(base.turmas)
+    )
+
+    print(
+        "Blocos:",
+        len(base.blocos)
+    )
+
+    print(
+        "Slots:",
+        len(base.slots)
+    )
+
+    total_variaveis = 0
+
+    for bloco_id in variables:
+
+        total_variaveis += len(
+            variables[bloco_id]
+        )
+
+    print(
+        "Variáveis CP-SAT:",
+        total_variaveis
+    )
 
     print()
     print("===== RESTRIÇÕES =====")
@@ -49,8 +101,20 @@ def main():
 
     print(
         "Block Assignment:",
-        total_restricoes,
+        total_block_assignment
     )
+
+    print(
+        "Turma Conflict:",
+        total_turma_conflicts
+    )
+
+    print(
+        "Total de restrições:",
+        total_block_assignment
+        + total_turma_conflicts
+    )
+
 
 if __name__ == "__main__":
     main()
