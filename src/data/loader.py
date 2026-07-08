@@ -9,6 +9,7 @@ from src.domain.models import (
     Especialidade,
     ParPedagogico,
     PadraoPedagogico,
+    Slot
 )
 
 
@@ -267,4 +268,24 @@ class ExcelLoader:
             especialidades=self.load_especialidades(),
             pares_pedagogicos=self.load_pares_pedagogicos(),
             padroes_pedagogicos=self.load_padroes_pedagogicos(),
+            slots=self.load_slots(),
         )
+    
+    def load_slots(self):
+
+        slots = []
+
+        for row in self._linhas("SLOTS"):
+
+            slots.append(
+                Slot(
+                    dia=self._texto(
+                        row["Dia"]
+                    ),
+                    aula=self._inteiro(
+                        row["Aula"]
+                    ),
+                )
+            )
+
+        return slots

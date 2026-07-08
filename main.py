@@ -1,6 +1,5 @@
-from collections import Counter
-
 from src.data.loader import ExcelLoader
+
 from src.builder.pedagogical_blocks import (
     PedagogicalBlockBuilder
 )
@@ -9,10 +8,6 @@ ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
 
 def main():
-
-    print()
-    print("===== CARREGANDO BASE =====")
-    print()
 
     loader = ExcelLoader(ARQUIVO)
 
@@ -23,14 +18,9 @@ def main():
     base.blocos = builder.build()
 
     print()
-    print("===== MATEMÁTICA =====")
+    print("===== ÚLTIMOS SLOTS =====")
     print()
-
-    for bloco in base.blocos:
-
-        if "_MAT_" in bloco.id:
-
-            print(bloco.id)
+    print(len(base.slots))
 
 if __name__ == "__main__":
     main()

@@ -24,6 +24,8 @@ class BaseDados:
 
     blocos: list[BlocoPedagogico] | None = None
 
+    slots: list[Slot] | None = None
+
 
 from src.domain.models import (
     Curso,
@@ -31,5 +33,6 @@ from src.domain.models import (
     Especialidade,
     BlocoPedagogico,
     ParPedagogico,
-    PadraoPedagogico
+    PadraoPedagogico,
+    Slot
 )
