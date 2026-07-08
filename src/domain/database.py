@@ -6,6 +6,7 @@ from src.domain.models import (
     Especialidade,
     ParPedagogico,
     PadraoPedagogico,
+    Atribuicao,
     BlocoPedagogico,
     Slot,
     Restricao,
@@ -28,6 +29,8 @@ class BaseDados:
     padroes_pedagogicos: list[PadraoPedagogico]
 
     restricoes: list[Restricao]
+
+    atribuicoes: list[Atribuicao]
 
     slots: list[Slot]
 

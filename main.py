@@ -30,8 +30,12 @@ from src.solver.scheduler import (
     Scheduler,
 )
 
-from src.solver.rules.stats import (
+from src.solver.stats import (
     SolverStats,
+)
+
+from src.solver.constraints.professor_conflicts import (
+    ProfessorConflictConstraint,
 )
 
 
@@ -132,6 +136,18 @@ def main():
         turma_conflicts.build()
     )
 
+    professor_conflicts = (
+        ProfessorConflictConstraint(
+            model,
+            variables,
+            base,
+        )
+    )
+
+    total_professor_conflicts = (
+        professor_conflicts.build()
+    )
+
     # =====================================
     # ESTATÍSTICAS
     # =====================================
@@ -142,6 +158,7 @@ def main():
         resumo_regras=resumo_regras,
         total_block_assignment=total_block_assignment,
         total_turma_conflicts=total_turma_conflicts,
+        total_professor_conflicts=total_professor_conflicts,
     )
 
     stats.imprimir()
@@ -198,6 +215,11 @@ def main():
     print(
         "Turma Conflict:",
         total_turma_conflicts
+    )
+
+    print(
+        "Professor Conflict:",
+        total_professor_conflicts
     )
 
     # =====================================

@@ -10,7 +10,8 @@ from src.domain.models import (
     ParPedagogico,
     PadraoPedagogico,
     Slot,
-    Restricao
+    Restricao,
+    Atribuicao,
 )
 
 
@@ -271,6 +272,7 @@ class ExcelLoader:
             padroes_pedagogicos=self.load_padroes_pedagogicos(),
             slots=self.load_slots(),
             restricoes=self.load_restricoes(),
+            atribuicoes=self.load_atribuicoes(),
         )
     
     def load_slots(self):
@@ -314,3 +316,29 @@ class ExcelLoader:
             )
 
         return restricoes
+    
+    # ==========================================================
+    # ATRIBUIÇÕES
+    # ==========================================================
+
+    def load_atribuicoes(self):
+
+        atribuicoes = []
+
+        for row in self._linhas("ATRIBUICOES"):
+
+            atribuicoes.append(
+                Atribuicao(
+                    turma=self._texto(
+                        row["Turma"]
+                    ),
+                    especialidade=self._texto(
+                        row["Especialidade"]
+                    ),
+                    professor=self._texto(
+                        row["Professor"]
+                    ),
+                )
+            )
+
+        return atribuicoes

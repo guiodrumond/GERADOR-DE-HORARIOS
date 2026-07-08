@@ -7,6 +7,7 @@ class SolverStats:
         resumo_regras,
         total_block_assignment,
         total_turma_conflicts,
+        total_professor_conflicts=0,
     ):
 
         self.base = base
@@ -20,6 +21,10 @@ class SolverStats:
 
         self.total_turma_conflicts = (
             total_turma_conflicts
+        )
+
+        self.total_professor_conflicts = (
+            total_professor_conflicts
         )
 
     def total_variaveis(self):
@@ -39,6 +44,7 @@ class SolverStats:
         return (
             self.total_block_assignment
             + self.total_turma_conflicts
+            + self.total_professor_conflicts
         )
 
     def total_constraints_engine(self):
@@ -96,6 +102,9 @@ class SolverStats:
                 self.resumo_regras[
                     "pendentes"
                 ],
+
+            "professor_conflicts":
+                self.total_professor_conflicts,
         }
 
     def imprimir(self):
@@ -166,5 +175,12 @@ class SolverStats:
             "Regras Pendentes:",
             dados[
                 "regras_pendentes"
+            ]
+        )
+
+        print(
+            "Professor Conflict:",
+            dados[
+                "professor_conflicts"
             ]
         )
