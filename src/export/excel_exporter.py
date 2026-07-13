@@ -16,13 +16,9 @@ class ExcelExporter:
 
         self.base = base
 
-        self.componente_para_area = (
-            self._criar_mapa_componente_area()
-            )
-
-    # ==================================================
-    # EXPORTAÇÃO
-    # ==================================================
+        self.componente_para_grupo = (
+            self._criar_mapa_componente_grupo()
+        )
 
     def export(
         self,
@@ -47,19 +43,23 @@ class ExcelExporter:
             aba_padrao
         )
 
-        for turma in self._turmas_ativas():
+        sheet_turmas = workbook.create_sheet(
+            title="TURMAS"
+        )
 
-            sheet = workbook.create_sheet(
-                title=self._safe_sheet_name(
-                    turma.codigo
-                )
-            )
+        self._write_turmas_sheet(
+            sheet=sheet_turmas,
+            grid=grid,
+        )
 
-            self._write_sheet(
-                sheet=sheet,
-                grid=grid,
-                turma=turma.codigo,
-            )
+        sheet_professores = workbook.create_sheet(
+            title="PROFESSORES"
+        )
+
+        self._write_professores_sheet(
+            sheet=sheet_professores,
+            grid=grid,
+        )
 
         workbook.save(
             caminho
@@ -67,76 +67,74 @@ class ExcelExporter:
 
         return caminho
 
-    # ==================================================
-    # TURMAS
-    # ==================================================
-
-    def _turmas_ativas(self):
-
-        return [
-            turma
-            for turma in self.base.turmas
-            if turma.ativa
-        ]
-
-    # ==================================================
-    # PLANILHA
-    # ==================================================
-
-    def _write_sheet(
+    def _write_turmas_sheet(
         self,
         sheet,
         grid,
-        turma,
     ):
 
         dias = self._dias()
         aulas = self._aulas()
 
-        self._setup_sheet(
-            sheet,
-            turma,
-            dias,
+        self._setup_general_sheet(
+            sheet
         )
 
-        self._write_header(
-            sheet,
-            dias,
-        )
+        current_row = 1
 
-        self._write_body(
-            sheet,
-            grid,
-            turma,
-            dias,
-            aulas,
-        )
+        for turma in self._turmas_ativas():
 
-        self._merge_blocos(
-            sheet,
-            grid,
-            turma,
-            dias,
-            aulas,
-        )
+            current_row = self._write_turma_table(
+                sheet=sheet,
+                grid=grid,
+                turma=turma.codigo,
+                dias=dias,
+                aulas=aulas,
+                start_row=current_row,
+            )
 
-        self._write_summary(
-            sheet,
-            grid,
-            turma,
-            dias,
-            aulas,
-        )
+            current_row += 2
 
-    # ==================================================
-    # LAYOUT
-    # ==================================================
-
-    def _setup_sheet(
+    def _write_professores_sheet(
         self,
         sheet,
+        grid,
+    ):
+
+        dias = self._dias()
+        aulas = self._aulas()
+
+        self._setup_general_sheet(
+            sheet
+        )
+
+        professores = self._professores_do_grid(
+            grid
+        )
+
+        current_row = 1
+
+        for professor in professores:
+
+            current_row = self._write_professor_table(
+                sheet=sheet,
+                grid=grid,
+                professor=professor,
+                dias=dias,
+                aulas=aulas,
+                start_row=current_row,
+            )
+
+            current_row += 2
+
+    def _write_turma_table(
+        self,
+        sheet,
+        grid,
         turma,
         dias,
+        aulas,
+        start_row,
     ):
 
         total_colunas = (
@@ -145,14 +143,14 @@ class ExcelExporter:
         )
 
         sheet.merge_cells(
-            start_row=1,
+            start_row=start_row,
             start_column=1,
-            end_row=1,
+            end_row=start_row,
             end_column=total_colunas,
         )
 
         title_cell = sheet.cell(
-            row=1,
+            row=start_row,
             column=1,
             value=f"HORÁRIO {turma}",
         )
@@ -162,85 +160,31 @@ class ExcelExporter:
         )
 
         sheet.row_dimensions[
-            1
+            start_row
         ].height = 28
 
-        sheet.column_dimensions[
-            "A"
-        ].width = 10
-
-        for col in range(
-            2,
-            total_colunas + 1,
-        ):
-
-            letter = sheet.cell(
-                row=2,
-                column=col,
-            ).column_letter
-
-            sheet.column_dimensions[
-                letter
-            ].width = 22
-
-        sheet.sheet_view.showGridLines = False
-
-    # ==================================================
-    # CABEÇALHO
-    # ==================================================
-
-    def _write_header(
-        self,
-        sheet,
-        dias,
-    ):
-
-        cell = sheet.cell(
-            row=2,
-            column=1,
-            value="AULA",
+        header_row = (
+            start_row
+            + 1
         )
 
-        ExcelStyles.apply_header(
-            cell
+        self._write_header(
+            sheet=sheet,
+            dias=dias,
+            row=header_row,
         )
 
-        for coluna, dia in enumerate(
-            dias,
-            start=2,
-        ):
-
-            cell = sheet.cell(
-                row=2,
-                column=coluna,
-                value=dia,
-            )
-
-            ExcelStyles.apply_header(
-                cell
-            )
-
-    # ==================================================
-    # CORPO
-    # ==================================================
-
-    def _write_body(
-        self,
-        sheet,
-        grid,
-        turma,
-        dias,
-        aulas,
-    ):
-
-        linha_inicial = 3
+        body_start = (
+            start_row
+            + 2
+        )
 
         for row_offset, aula in enumerate(
             aulas
         ):
 
             row = (
-                linha_inicial
+                body_start
                 + row_offset
             )
 
@@ -269,20 +213,23 @@ class ExcelExporter:
                     aula,
                 )
 
+                texto = ""
+                grupo = None
+
                 if cell_data:
 
                     componente = (
                         cell_data.texto
                     )
 
-                    area = (
-                        self.componente_para_area.get(
-                            componente.upper()
-                        )
-                    )
-
                     professor = (
                         cell_data.professor
+                    )
+
+                    grupo = (
+                        self.componente_para_grupo.get(
+                            componente.upper()
+                        )
                     )
 
                     if professor:
@@ -296,10 +243,141 @@ class ExcelExporter:
 
                         texto = componente
 
+                cell = sheet.cell(
+                    row=row,
+                    column=col_offset,
+                    value=texto,
+                )
+
+                ExcelStyles.apply_body(
+                    cell,
+                    texto,
+                    grupo,
+                )
+
+        self._merge_blocos_turma(
+            sheet=sheet,
+            grid=grid,
+            turma=turma,
+            dias=dias,
+            aulas=aulas,
+            body_start=body_start,
+        )
+
+        return (
+            body_start
+            + len(aulas)
+        )
+
+    def _write_professor_table(
+        self,
+        sheet,
+        grid,
+        professor,
+        dias,
+        aulas,
+        start_row,
+    ):
+
+        total_colunas = (
+            len(dias)
+            + 1
+        )
+
+        sheet.merge_cells(
+            start_row=start_row,
+            start_column=1,
+            end_row=start_row,
+            end_column=total_colunas,
+        )
+
+        title_cell = sheet.cell(
+            row=start_row,
+            column=1,
+            value=professor,
+        )
+
+        ExcelStyles.apply_title(
+            title_cell
+        )
+
+        sheet.row_dimensions[
+            start_row
+        ].height = 28
+
+        header_row = (
+            start_row
+            + 1
+        )
+
+        self._write_header(
+            sheet=sheet,
+            dias=dias,
+            row=header_row,
+        )
+
+        body_start = (
+            start_row
+            + 2
+        )
+
+        for row_offset, aula in enumerate(
+            aulas
+        ):
+
+            row = (
+                body_start
+                + row_offset
+            )
+
+            aula_cell = sheet.cell(
+                row=row,
+                column=1,
+                value=aula,
+            )
+
+            ExcelStyles.apply_aula_cell(
+                aula_cell
+            )
+
+            sheet.row_dimensions[
+                row
+            ].height = 45
+
+            for col_offset, dia in enumerate(
+                dias,
+                start=2,
+            ):
+
+                entradas = self._entradas_professor_slot(
+                    grid=grid,
+                    professor=professor,
+                    dia=dia,
+                    aula=aula,
+                )
+
+                if entradas:
+
+                    texto = "\n".join(
+                        entradas
+                    )
+
+                    componente = (
+                        entradas[0]
+                        .split(" - ")[-1]
+                        .strip()
+                    )
+
+                    grupo = (
+                        self.componente_para_grupo.get(
+                            componente.upper()
+                        )
+                    )
+
                 else:
 
                     texto = ""
-                    area = None
+                    grupo = None
 
                 cell = sheet.cell(
                     row=row,
@@ -310,23 +388,55 @@ class ExcelExporter:
                 ExcelStyles.apply_body(
                     cell,
                     texto,
-                    area,
+                    grupo,
                 )
 
-    # ==================================================
-    # MESCLAGEM
-    # ==================================================
+        return (
+            body_start
+            + len(aulas)
+        )
 
-    def _merge_blocos(
+    def _write_header(
+        self,
+        sheet,
+        dias,
+        row,
+    ):
+
+        cell = sheet.cell(
+            row=row,
+            column=1,
+            value="AULA",
+        )
+
+        ExcelStyles.apply_header(
+            cell
+        )
+
+        for coluna, dia in enumerate(
+            dias,
+            start=2,
+        ):
+
+            cell = sheet.cell(
+                row=row,
+                column=coluna,
+                value=dia,
+            )
+
+            ExcelStyles.apply_header(
+                cell
+            )
+
+    def _merge_blocos_turma(
         self,
         sheet,
         grid,
         turma,
         dias,
         aulas,
+        body_start,
     ):
-
-        linha_inicial = 3
 
         for col_offset, dia in enumerate(
             dias,
@@ -341,7 +451,7 @@ class ExcelExporter:
             ):
 
                 row = (
-                    linha_inicial
+                    body_start
                     + index
                 )
 
@@ -356,6 +466,7 @@ class ExcelExporter:
                     chave_merge = (
                         cell_data.bloco_id,
                         cell_data.texto,
+                        cell_data.professor,
                     )
 
                 else:
@@ -366,6 +477,7 @@ class ExcelExporter:
                     chave_merge is not None
                     and chave_merge == chave_atual
                 ):
+
                     continue
 
                 if (
@@ -385,7 +497,7 @@ class ExcelExporter:
                 chave_atual = chave_merge
 
             ultima_row = (
-                linha_inicial
+                body_start
                 + len(aulas)
                 - 1
             )
@@ -418,61 +530,102 @@ class ExcelExporter:
             end_column=column,
         )
 
-    # ==================================================
-    # RESUMO
-    # ==================================================
-
-    def _write_summary(
+    def _entradas_professor_slot(
         self,
-        sheet,
         grid,
-        turma,
-        dias,
-        aulas,
+        professor,
+        dia,
+        aula,
     ):
 
-        start_row = (
-            len(aulas)
-            + 5
+        entradas = []
+
+        for turma in grid.turmas():
+
+            cell = grid.get(
+                turma,
+                dia,
+                aula,
+            )
+
+            if not cell:
+                continue
+
+            if cell.professor != professor:
+                continue
+
+            entradas.append(
+                f"{turma} - {cell.texto}"
+            )
+
+        return entradas
+
+    def _professores_do_grid(
+        self,
+        grid,
+    ):
+
+        professores = set()
+
+        for turma in grid.turmas():
+
+            for dia in self._dias():
+
+                for aula in self._aulas():
+
+                    cell = grid.get(
+                        turma,
+                        dia,
+                        aula,
+                    )
+
+                    if (
+                        cell
+                        and cell.professor
+                    ):
+
+                        professores.add(
+                            cell.professor
+                        )
+
+        return sorted(
+            professores
         )
 
-        total = 0
+    def _setup_general_sheet(
+        self,
+        sheet,
+    ):
 
-        for dia in dias:
+        sheet.sheet_view.showGridLines = False
 
-            for aula in aulas:
+        sheet.column_dimensions[
+            "A"
+        ].width = 10
 
-                if grid.get(
-                    turma,
-                    dia,
-                    aula,
-                ):
-                    total += 1
+        dias = self._dias()
 
-        label = sheet.cell(
-            row=start_row,
-            column=1,
-            value="Aulas ocupadas",
-        )
+        for col in range(
+            2,
+            len(dias) + 2,
+        ):
 
-        value = sheet.cell(
-            row=start_row,
-            column=2,
-            value=total,
-        )
+            letter = sheet.cell(
+                row=1,
+                column=col,
+            ).column_letter
 
-        ExcelStyles.apply_header(
-            label
-        )
+            sheet.column_dimensions[
+                letter
+            ].width = 25
 
-        ExcelStyles.apply_body(
-            value,
-            str(total),
-        )
+    def _turmas_ativas(self):
 
-    # ==================================================
-    # SLOTS
-    # ==================================================
+        return [
+            turma
+            for turma in self.base.turmas
+            if turma.ativa
+        ]
 
     def _dias(self):
 
@@ -497,13 +650,23 @@ class ExcelExporter:
             }
         )
 
-    # ==================================================
-    # UTIL
-    # ==================================================
+    def _criar_mapa_componente_grupo(
+        self,
+    ):
+
+        mapa = {}
+
+        for esp in self.base.especialidades:
+
+            mapa[
+                esp.sigla.upper()
+            ] = esp.componente.upper()
+
+        return mapa
 
     def _safe_sheet_name(
         self,
-        name: str,
+        name,
     ):
 
         invalidos = [
@@ -526,17 +689,3 @@ class ExcelExporter:
             )
 
         return result[:31]
-
-    def _criar_mapa_componente_area(
-        self,
-    ):
-
-        mapa = {}
-
-        for esp in self.base.especialidades:
-
-            mapa[
-                esp.sigla.upper()
-            ] = esp.componente.upper()
-
-        return mapa
