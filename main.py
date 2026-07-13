@@ -60,6 +60,14 @@ from src.export.excel_exporter import (
     ExcelExporter,
 )
 
+from src.solver.objectives.objective_builder import (
+    ObjectiveBuilder,
+)
+
+from src.solver.objectives.area_grouping_objective import (
+    AreaGroupingObjective,
+)
+
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
 
@@ -156,6 +164,57 @@ def main():
             base,
         ).build()
     )
+
+    # ====================================================
+    # OBJECTIVE BUILDER
+    # ====================================================
+
+    objective_builder = ObjectiveBuilder(
+        model=model,
+        variables=variables,
+        base=base,
+        regras=regras,
+    )
+
+    area_grouping = AreaGroupingObjective(
+        model=model,
+        variables=variables,
+        base=base,
+        regras=regras,
+        objective_builder=objective_builder,
+    )
+
+    total_area_grouping_terms = (
+        area_grouping.build()
+    )
+
+    total_objective_terms = (
+        objective_builder.build()
+    )
+
+    objective_builder.imprimir_resumo()
+
+    # ====================================================
+    # OBJECTIVE BUILDER
+    # ====================================================
+
+    objective_builder = ObjectiveBuilder(
+        model=model,
+        variables=variables,
+        base=base,
+        regras=regras,
+    )
+
+    total_objective_terms = (
+        objective_builder.build()
+    )
+
+    print(
+    "Termos de objetivo:",
+    total_objective_terms
+    )
+    
+    objective_builder.imprimir_resumo()
 
     # ====================================================
     # ESTATÍSTICAS

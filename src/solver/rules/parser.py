@@ -11,6 +11,8 @@ class RuleParser:
         "BLOCO_ACEITAVEL",
         "BLOCO_MINIMO",
 
+        "BLOCO_CONTINUO",
+
         "COMPLEMENTO",
         "COMPLEMENTO_POSICAO",
 
