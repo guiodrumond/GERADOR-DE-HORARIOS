@@ -80,6 +80,14 @@ from src.solver.planning.planning_window_builder import (
     PlanningWindowBuilder,
 )
 
+from src.solver.planning.planning_variables import (
+    PlanningVariables,
+)
+
+from src.solver.planning.teacher_availability_builder import (
+    TeacherAvailabilityBuilder,
+)
+
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
 
@@ -98,36 +106,6 @@ def main():
     )
 
     base = loader.load()
-
-    planning_windows = (
-    PlanningWindowBuilder(
-        base=base,
-        tamanho_janela=2,
-    ).build()
-    )
-
-    print()
-    print("===== JANELAS DE PLANEJAMENTO =====")
-    print()
-
-    print(
-        "Total:",
-        len(planning_windows)
-    )
-
-    for window in planning_windows:
-
-        print(
-            window.id,
-            "|",
-            window.dia,
-            "|",
-            window.aula_inicio,
-            "-",
-            window.aula_final,
-            "|",
-            window.slots,
-        )
 
     # ====================================================
     # BLOCOS PEDAGÓGICOS
@@ -161,6 +139,78 @@ def main():
 
     model, variables = (
         variable_builder.build()
+    )
+
+    
+    planning_windows = (
+        PlanningWindowBuilder(
+            base=base,
+            tamanho_janela=2,
+        ).build()
+        )
+
+    planning_variables = (
+        PlanningVariables(
+            model=model,
+            planning_windows=planning_windows,
+        ).build()
+    )
+
+    print()
+    print("===== JANELAS DE PLANEJAMENTO =====")
+    print()
+
+    print(
+        "Total:",
+        len(planning_windows)
+    )
+
+    for window in planning_windows:
+
+        print(
+            window.id,
+            "|",
+            window.dia,
+            "|",
+            window.aula_inicio,
+            "-",
+            window.aula_final,
+            "|",
+            window.slots,
+        )
+
+    teacher_availability = (
+        TeacherAvailabilityBuilder(
+            model=model,
+            variables=variables,
+            base=base,
+            planning_windows=planning_windows,
+        ).build()
+    )
+
+    print()
+    print("===== DISPONIBILIDADE DOCENTE =====")
+    print()
+
+    print(
+        "Janelas:",
+        len(teacher_availability)
+    )
+
+    primeira_janela = next(
+        iter(
+            teacher_availability
+        )
+    )
+
+    print(
+        primeira_janela,
+        "| professores:",
+        len(
+            teacher_availability[
+                primeira_janela
+            ]
+        )
     )
 
     # ====================================================
