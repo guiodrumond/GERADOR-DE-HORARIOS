@@ -13,7 +13,9 @@ class ScheduleEntry:
 
     bloco_id: str
 
-    componentes: list[str]
+    componente: str
+
+    professor: str | None = None
 
 
 class ClassSchedule:
@@ -28,7 +30,8 @@ class ClassSchedule:
         dia,
         aula,
         bloco_id,
-        componentes,
+        componente,
+        professor=None,
     ):
 
         self.data[turma][
@@ -38,5 +41,23 @@ class ClassSchedule:
             dia=dia,
             aula=aula,
             bloco_id=bloco_id,
-            componentes=componentes,
+            componente=componente,
+            professor=professor,
+        )
+
+    def get(
+        self,
+        turma,
+        dia,
+        aula,
+    ):
+
+        return self.data[turma].get(
+            (dia, aula)
+        )
+
+    def turmas(self):
+
+        return sorted(
+            self.data.keys()
         )

@@ -25,22 +25,6 @@ class PedagogicalBlockBuilder:
     # PADRÕES PEDAGÓGICOS
     # =====================================================
 
-    def _tem_padrao(
-        self,
-        componente: str,
-        tipo: str,
-    ):
-
-        for padrao in self.base.padroes_pedagogicos:
-
-            if (
-                padrao.componente == componente
-                and padrao.tipo == tipo
-            ):
-                return True
-
-        return False
-
     def _valor_padrao(
         self,
         componente: str,
@@ -117,10 +101,6 @@ class PedagogicalBlockBuilder:
 
         pares = self._componentes_em_pares()
 
-        # -------------------------------------------------
-        # Componentes individuais
-        # -------------------------------------------------
-
         for esp in self.base.especialidades:
 
             sigla = esp.sigla.upper()
@@ -128,7 +108,15 @@ class PedagogicalBlockBuilder:
             if sigla in pares:
                 continue
 
-            # PROJETOS
+            if sigla == "POR":
+
+                blocos.extend(
+                    self._criar_portugues(
+                        turma
+                    )
+                )
+
+                continue
 
             if sigla == "PROJ":
 
@@ -138,164 +126,150 @@ class PedagogicalBlockBuilder:
                         turma=turma,
                         componentes=["PROJ"],
                         tamanho=4,
-                        fixo=self._tem_padrao(
-                            "PROJ",
-                            "FIXO",
-                        ),
+                        fixo=True,
                     )
                 )
 
                 continue
-
-            # MATEMÁTICA
 
             if sigla == "MAT":
 
-                numero_duplas = (
-                    self._numero_duplas_matematica()
+                blocos.extend(
+                    self._criar_matematica(
+                        turma
+                    )
                 )
 
-                for numero in range(
-                    numero_duplas
-                ):
-
-                    sufixo = chr(
-                        ord("A") + numero
-                    )
-
-                    blocos.append(
-                        BlocoPedagogico(
-                            id=(
-                                f"{turma}_MAT_"
-                                f"{sufixo}"
-                            ),
-                            turma=turma,
-                            componentes=["MAT"],
-                            tamanho=2,
-                        )
-                    )
-
                 continue
-
-            # FTP
 
             if sigla == "FTP":
 
-                turma_obj = self._buscar_turma(
-                    turma
-                )
-
-                if turma_obj.padrao_ftp == "BLOCO4":
-
-                    blocos.append(
-                        BlocoPedagogico(
-                            id=f"{turma}_FTP",
-                            turma=turma,
-                            componentes=["FTP"],
-                            tamanho=4,
-                        )
-                    )
-
-                elif turma_obj.padrao_ftp == "2+2":
-
-                    blocos.append(
-                        BlocoPedagogico(
-                            id=f"{turma}_FTP_A",
-                            turma=turma,
-                            componentes=["FTP"],
-                            tamanho=2,
-                        )
-                    )
-
-                    blocos.append(
-                        BlocoPedagogico(
-                            id=f"{turma}_FTP_B",
-                            turma=turma,
-                            componentes=["FTP"],
-                            tamanho=2,
-                        )
-                    )
-
-                continue
-
-            # GEOGRAFIA
-
-            if sigla == "GEO":
-
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_GEO",
-                        turma=turma,
-                        componentes=["GEO"],
-                        tamanho=2,
+                blocos.extend(
+                    self._criar_ftp(
+                        turma
                     )
                 )
 
                 continue
 
-            # FILOSOFIA
-
-            if sigla == "FIL":
-
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_FIL",
-                        turma=turma,
-                        componentes=["FIL"],
-                        tamanho=2,
-                    )
+            blocos.extend(
+                self._criar_bloco_generico(
+                    turma=turma,
+                    sigla=sigla,
+                    aulas=esp.aulas,
                 )
+            )
 
-                continue
+        blocos.extend(
+            self._criar_pares_pedagogicos(
+                turma
+            )
+        )
 
-            # FÍSICA
+        return blocos
 
-            if sigla == "FIS":
+    # =====================================================
+    # PORTUGUÊS
+    # =====================================================
 
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_FIS",
-                        turma=turma,
-                        componentes=["FIS"],
-                        tamanho=2,
-                    )
+    def _criar_portugues(self, turma: str):
+
+        return [
+            BlocoPedagogico(
+                id=f"{turma}_POR_A",
+                turma=turma,
+                componentes=["POR"],
+                tamanho=2,
+            ),
+            BlocoPedagogico(
+                id=f"{turma}_POR_B",
+                turma=turma,
+                componentes=["POR"],
+                tamanho=1,
+            ),
+        ]
+
+    # =====================================================
+    # MATEMÁTICA
+    # =====================================================
+
+    def _criar_matematica(self, turma: str):
+
+        blocos = []
+
+        numero_duplas = (
+            self._numero_duplas_matematica()
+        )
+
+        for numero in range(
+            numero_duplas
+        ):
+
+            sufixo = chr(
+                ord("A") + numero
+            )
+
+            blocos.append(
+                BlocoPedagogico(
+                    id=f"{turma}_MAT_{sufixo}",
+                    turma=turma,
+                    componentes=["MAT"],
+                    tamanho=2,
                 )
+            )
 
-                continue
+        return blocos
 
-            # QUÍMICA
+    # =====================================================
+    # FTP
+    # =====================================================
 
-            if sigla == "QUI":
+    def _criar_ftp(self, turma: str):
 
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_QUI",
-                        turma=turma,
-                        componentes=["QUI"],
-                        tamanho=2,
-                    )
+        turma_obj = self._buscar_turma(
+            turma
+        )
+
+        if turma_obj.padrao_ftp == "BLOCO4":
+
+            return [
+                BlocoPedagogico(
+                    id=f"{turma}_FTP",
+                    turma=turma,
+                    componentes=["FTP"],
+                    tamanho=4,
                 )
+            ]
 
-                continue
+        if turma_obj.padrao_ftp == "2+2":
 
-            # EDUCAÇÃO FÍSICA
+            return [
+                BlocoPedagogico(
+                    id=f"{turma}_FTP_A",
+                    turma=turma,
+                    componentes=["FTP"],
+                    tamanho=2,
+                ),
+                BlocoPedagogico(
+                    id=f"{turma}_FTP_B",
+                    turma=turma,
+                    componentes=["FTP"],
+                    tamanho=2,
+                ),
+            ]
 
-            if sigla == "EDF":
+        raise ValueError(
+            f"Padrao_FTP inválido para turma {turma}: "
+            f"{turma_obj.padrao_ftp}"
+        )
 
-                blocos.append(
-                    BlocoPedagogico(
-                        id=f"{turma}_EDF",
-                        turma=turma,
-                        componentes=["EDF"],
-                        tamanho=2,
-                    )
-                )
+    # =====================================================
+    # PARES PEDAGÓGICOS
+    # =====================================================
 
-                continue
+    def _criar_pares_pedagogicos(self, turma: str):
 
-        # -------------------------------------------------
-        # Pares pedagógicos
-        # -------------------------------------------------
+        blocos = []
 
         for par in self.base.pares_pedagogicos:
 
@@ -317,26 +291,34 @@ class PedagogicalBlockBuilder:
                 )
             )
 
-        # -------------------------------------------------
-        # Português
-        # -------------------------------------------------
-
-        blocos.append(
-            BlocoPedagogico(
-                id=f"{turma}_POR_A",
-                turma=turma,
-                componentes=["POR"],
-                tamanho=2,
-            )
-        )
-
-        blocos.append(
-            BlocoPedagogico(
-                id=f"{turma}_POR_B",
-                turma=turma,
-                componentes=["POR"],
-                tamanho=1,
-            )
-        )
-
         return blocos
+
+    # =====================================================
+    # GENÉRICOS
+    # =====================================================
+
+    def _criar_bloco_generico(
+        self,
+        turma: str,
+        sigla: str,
+        aulas: int,
+    ):
+
+        if aulas in {
+            1,
+            2,
+        }:
+
+            return [
+                BlocoPedagogico(
+                    id=f"{turma}_{sigla}",
+                    turma=turma,
+                    componentes=[sigla],
+                    tamanho=aulas,
+                )
+            ]
+
+        raise ValueError(
+            f"Especialidade {sigla} com {aulas} aulas "
+            "não possui regra de blocagem definida."
+        )

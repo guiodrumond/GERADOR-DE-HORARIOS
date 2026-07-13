@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from ortools.sat.python import cp_model
 
 from src.data.loader import ExcelLoader
@@ -46,8 +48,16 @@ from src.scheduling.schedule_builder import (
     ScheduleBuilder,
 )
 
-from src.scheduling.schedule_printer import (
-    SchedulePrinter,
+from src.scheduling.grid_builder import (
+    GridBuilder,
+)
+
+from src.scheduling.grid_printer import (
+    GridPrinter,
+)
+
+from src.export.excel_exporter import (
+    ExcelExporter,
 )
 
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
@@ -56,12 +66,12 @@ ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 def main():
 
     print()
-    print("===== CARREGANDO BASE =====")
+    print("===== GERADOR DE HORÁRIOS =====")
     print()
 
-    # -------------------------------------
-    # BASE
-    # -------------------------------------
+    # ====================================================
+    # CARREGAMENTO
+    # ====================================================
 
     loader = ExcelLoader(
         ARQUIVO
@@ -69,19 +79,19 @@ def main():
 
     base = loader.load()
 
-    builder = (
-        PedagogicalBlockBuilder(
-            base
-        )
+    # ====================================================
+    # BLOCOS PEDAGÓGICOS
+    # ====================================================
+
+    builder = PedagogicalBlockBuilder(
+        base
     )
 
-    base.blocos = (
-        builder.build()
-    )
+    base.blocos = builder.build()
 
-    # -------------------------------------
-    # REGRAS
-    # -------------------------------------
+    # ====================================================
+    # REGRAS PARAMETRIZADAS
+    # ====================================================
 
     parser = RuleParser()
 
@@ -89,9 +99,9 @@ def main():
         base.restricoes
     )
 
-    # -------------------------------------
-    # VARIÁVEIS
-    # -------------------------------------
+    # ====================================================
+    # VARIÁVEIS CP-SAT
+    # ====================================================
 
     variable_builder = (
         DecisionVariableBuilder(
@@ -103,9 +113,9 @@ def main():
         variable_builder.build()
     )
 
-    # -------------------------------------
+    # ====================================================
     # RULE ENGINE
-    # -------------------------------------
+    # ====================================================
 
     rule_engine = RuleEngine(
         model=model,
@@ -120,48 +130,36 @@ def main():
         rule_engine.resumo()
     )
 
-    # -------------------------------------
+    # ====================================================
     # CONSTRAINTS BASE
-    # -------------------------------------
+    # ====================================================
 
-    block_assignment = (
+    total_block_assignment = (
         BlockAssignmentConstraint(
             model,
             variables,
-        )
+        ).build()
     )
 
-    total_block_assignment = (
-        block_assignment.build()
-    )
-
-    turma_conflicts = (
+    total_turma_conflicts = (
         TurmaConflictConstraint(
             model,
             variables,
             base,
-        )
+        ).build()
     )
 
-    total_turma_conflicts = (
-        turma_conflicts.build()
-    )
-
-    professor_conflicts = (
+    total_professor_conflicts = (
         ProfessorConflictConstraint(
             model,
             variables,
             base,
-        )
+        ).build()
     )
 
-    total_professor_conflicts = (
-        professor_conflicts.build()
-    )
-
-    # -------------------------------------
+    # ====================================================
     # ESTATÍSTICAS
-    # -------------------------------------
+    # ====================================================
 
     stats = SolverStats(
         base=base,
@@ -174,23 +172,13 @@ def main():
 
     stats.imprimir()
 
-    print()
-    print("===== REGRAS =====")
-    print()
-
-    print(
-        "Aplicadas:",
-        resumo_regras["aplicadas"]
-    )
-
-    print(
-        "Pendentes:",
-        resumo_regras["pendentes"]
-    )
-
-    # -------------------------------------
+    # ====================================================
     # SOLVER
-    # -------------------------------------
+    # ====================================================
+
+    print()
+    print("===== EXECUTANDO SOLVER =====")
+    print()
 
     scheduler = Scheduler(
         model
@@ -200,8 +188,6 @@ def main():
         scheduler.solve()
     )
 
-    print()
-    print("===== SOLVER =====")
     print()
 
     if status == cp_model.OPTIMAL:
@@ -228,14 +214,14 @@ def main():
 
         print(
             "STATUS:",
-            status
+            status,
         )
 
         return
 
-    # -------------------------------------
+    # ====================================================
     # VALIDAÇÃO DOCENTE
-    # -------------------------------------
+    # ====================================================
 
     validator = (
         ProfessorValidator(
@@ -247,26 +233,94 @@ def main():
 
     validator.print_report()
 
-    # -------------------------------------
-    # HORÁRIO
-    # -------------------------------------
+    # ====================================================
+    # SCHEDULE
+    # ====================================================
 
-    schedule_builder = (
+    print()
+    print("===== CONSTRUINDO SCHEDULE =====")
+    print()
+
+    schedule = (
         ScheduleBuilder(
             base=base,
             variables=variables,
             solver=solver,
+        ).build()
+    )
+
+    # ====================================================
+    # GRID
+    # ====================================================
+
+    print()
+    print("===== CONSTRUINDO GRADE =====")
+    print()
+
+    grid = (
+        GridBuilder(
+            schedule
+        ).build()
+    )
+
+    print(
+        "Turmas na grade:",
+        len(
+            grid.turmas()
         )
     )
 
-    schedule = (
-        schedule_builder.build()
+    print(
+        "Células preenchidas:",
+        grid.total_cells()
     )
 
-    SchedulePrinter.print_turma(
-        schedule,
+    # ====================================================
+    # VISUALIZAÇÃO
+    # ====================================================
+
+    print()
+    print("===== AMOSTRA DE HORÁRIO =====")
+
+    GridPrinter.print_turma(
+        grid,
         "1ADM01",
     )
+
+    # ====================================================
+    # EXPORTAÇÃO EXCEL
+    # ====================================================
+
+    print()
+    print("===== EXPORTAÇÃO EXCEL =====")
+    print()
+
+    output_file = (
+        Path("outputs")
+        / "horario_gerado.xlsx"
+    )
+
+    exporter = ExcelExporter(
+        base
+    )
+
+    exporter.export(
+        grid=grid,
+        caminho_saida=str(
+            output_file
+        ),
+    )
+
+    print(
+        "Arquivo gerado:"
+    )
+
+    print(
+        output_file.resolve()
+    )
+
+    print()
+    print("===== PROCESSO FINALIZADO =====")
 
 
 if __name__ == "__main__":
