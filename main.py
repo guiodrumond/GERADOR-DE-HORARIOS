@@ -76,6 +76,10 @@ from src.solver.objectives.area_compactness_objective import (
     AreaCompactnessObjective,
 )
 
+from src.solver.planning.planning_window_builder import (
+    PlanningWindowBuilder,
+)
+
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
 
@@ -94,6 +98,36 @@ def main():
     )
 
     base = loader.load()
+
+    planning_windows = (
+    PlanningWindowBuilder(
+        base=base,
+        tamanho_janela=2,
+    ).build()
+    )
+
+    print()
+    print("===== JANELAS DE PLANEJAMENTO =====")
+    print()
+
+    print(
+        "Total:",
+        len(planning_windows)
+    )
+
+    for window in planning_windows:
+
+        print(
+            window.id,
+            "|",
+            window.dia,
+            "|",
+            window.aula_inicio,
+            "-",
+            window.aula_final,
+            "|",
+            window.slots,
+        )
 
     # ====================================================
     # BLOCOS PEDAGÓGICOS
