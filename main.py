@@ -1,43 +1,36 @@
 from ortools.sat.python import cp_model
 
 from src.data.loader import ExcelLoader
-
 from src.builder.pedagogical_blocks import (
     PedagogicalBlockBuilder,
 )
-
 from src.solver.variables import (
     DecisionVariableBuilder,
 )
-
 from src.solver.rules.parser import (
     RuleParser,
 )
-
 from src.solver.rules.engine import (
     RuleEngine,
 )
-
 from src.solver.constraints.block_assignment import (
     BlockAssignmentConstraint,
 )
-
 from src.solver.constraints.turma_conflicts import (
     TurmaConflictConstraint,
 )
-
 from src.solver.scheduler import (
     Scheduler,
 )
-
 from src.solver.stats import (
     SolverStats,
 )
-
 from src.solver.constraints.professor_conflicts import (
     ProfessorConflictConstraint,
 )
-
+from src.solver.validators.professor_validator import (
+    ProfessorValidator,
+)
 
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
@@ -52,20 +45,14 @@ def main():
     print("===== CARREGANDO BASE =====")
     print()
 
-    loader = ExcelLoader(
-        ARQUIVO
-    )
-
+    loader = ExcelLoader(ARQUIVO)
     base = loader.load()
 
     # =====================================
     # CONSTRUÇÃO DOS BLOCOS
     # =====================================
 
-    builder = PedagogicalBlockBuilder(
-        base
-    )
-
+    builder = PedagogicalBlockBuilder(base)
     base.blocos = builder.build()
 
     # =====================================
@@ -73,24 +60,14 @@ def main():
     # =====================================
 
     parser = RuleParser()
-
-    regras = parser.parse(
-        base.restricoes
-    )
+    regras = parser.parse(base.restricoes)
 
     # =====================================
     # VARIÁVEIS CP-SAT
     # =====================================
 
-    variable_builder = (
-        DecisionVariableBuilder(
-            base
-        )
-    )
-
-    model, variables = (
-        variable_builder.build()
-    )
+    variable_builder = DecisionVariableBuilder(base)
+    model, variables = variable_builder.build()
 
     # =====================================
     # RULE ENGINE
@@ -105,48 +82,34 @@ def main():
 
     rule_engine.build()
 
-    resumo_regras = (
-        rule_engine.resumo()
-    )
+    resumo_regras = rule_engine.resumo()
 
     # =====================================
     # CONSTRAINTS BASE
     # =====================================
 
-    block_assignment = (
-        BlockAssignmentConstraint(
-            model,
-            variables,
-        )
+    block_assignment = BlockAssignmentConstraint(
+        model,
+        variables,
     )
 
-    total_block_assignment = (
-        block_assignment.build()
+    total_block_assignment = block_assignment.build()
+
+    turma_conflicts = TurmaConflictConstraint(
+        model,
+        variables,
+        base,
     )
 
-    turma_conflicts = (
-        TurmaConflictConstraint(
-            model,
-            variables,
-            base,
-        )
+    total_turma_conflicts = turma_conflicts.build()
+
+    professor_conflicts = ProfessorConflictConstraint(
+        model,
+        variables,
+        base,
     )
 
-    total_turma_conflicts = (
-        turma_conflicts.build()
-    )
-
-    professor_conflicts = (
-        ProfessorConflictConstraint(
-            model,
-            variables,
-            base,
-        )
-    )
-
-    total_professor_conflicts = (
-        professor_conflicts.build()
-    )
+    total_professor_conflicts = professor_conflicts.build()
 
     # =====================================
     # ESTATÍSTICAS
@@ -173,12 +136,12 @@ def main():
 
     print(
         "Regras aplicadas:",
-        resumo_regras["aplicadas"]
+        resumo_regras["aplicadas"],
     )
 
     print(
         "Regras pendentes:",
-        resumo_regras["pendentes"]
+        resumo_regras["pendentes"],
     )
 
     print()
@@ -209,30 +172,38 @@ def main():
 
     print(
         "Block Assignment:",
-        total_block_assignment
+        total_block_assignment,
     )
 
     print(
         "Turma Conflict:",
-        total_turma_conflicts
+        total_turma_conflicts,
     )
 
     print(
         "Professor Conflict:",
-        total_professor_conflicts
+        total_professor_conflicts,
     )
 
     # =====================================
     # SOLVER
     # =====================================
 
-    scheduler = Scheduler(
-        model
-    )
+    scheduler = Scheduler(model)
+    solver, status = scheduler.solve()
 
-    solver, status = (
-        scheduler.solve()
-    )
+    if status in (
+        cp_model.OPTIMAL,
+        cp_model.FEASIBLE,
+    ):
+
+        validator = ProfessorValidator(
+            base=base,
+            variables=variables,
+            solver=solver,
+        )
+
+        validator.print_report()
 
     print()
     print("===== SOLVER =====")
@@ -240,27 +211,21 @@ def main():
 
     if status == cp_model.OPTIMAL:
 
-        print(
-            "STATUS: OPTIMAL"
-        )
+        print("STATUS: OPTIMAL")
 
     elif status == cp_model.FEASIBLE:
 
-        print(
-            "STATUS: FEASIBLE"
-        )
+        print("STATUS: FEASIBLE")
 
     elif status == cp_model.INFEASIBLE:
 
-        print(
-            "STATUS: INFEASIBLE"
-        )
+        print("STATUS: INFEASIBLE")
 
     else:
 
         print(
             "STATUS:",
-            status
+            status,
         )
 
     # =====================================
@@ -282,9 +247,7 @@ def main():
 
             for slot_id, variavel in slots.items():
 
-                if solver.BooleanValue(
-                    variavel
-                ):
+                if solver.BooleanValue(variavel):
 
                     print(
                         bloco_id,
