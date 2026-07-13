@@ -72,6 +72,10 @@ from src.solver.validators.area_continuity_validator import (
     AreaContinuityValidator,
 )
 
+from src.solver.objectives.area_compactness_objective import (
+    AreaCompactnessObjective,
+)
+
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
 
@@ -180,7 +184,7 @@ def main():
         regras=regras,
     )
 
-    area_grouping = AreaGroupingObjective(
+    area_compactness = AreaCompactnessObjective(
         model=model,
         variables=variables,
         base=base,
@@ -188,8 +192,8 @@ def main():
         objective_builder=objective_builder,
     )
 
-    total_area_grouping_terms = (
-        area_grouping.build()
+    total_area_compactness_terms = (
+        area_compactness.build()
     )
 
     total_objective_terms = (
