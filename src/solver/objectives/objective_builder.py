@@ -1,14 +1,4 @@
 class ObjectiveBuilder:
-    """
-    Constrói a função objetivo do modelo CP-SAT.
-
-    Nesta primeira versão, ele apenas fornece a infraestrutura:
-    - registrar termos de pontuação
-    - armazenar diagnóstico
-    - aplicar model.Maximize(...)
-
-    Os objetivos reais serão adicionados em handlers específicos.
-    """
 
     def __init__(
         self,
@@ -26,33 +16,50 @@ class ObjectiveBuilder:
         self.terms = []
         self.diagnostico = []
 
-    # ==================================================
-    # ADICIONAR TERMOS
-    # ==================================================
-
     def add_term(
         self,
         expression,
-        peso: int,
-        descricao: str,
+        peso: int = 1,
+        descricao: str = "",
     ):
 
         self.terms.append(
             expression * peso
         )
 
-        self.diagnostico.append(
-            {
-                "descricao": descricao,
-                "peso": peso,
-            }
+        if descricao:
+
+            self.diagnostico.append(
+                {
+                    "descricao": descricao,
+                    "peso": peso,
+                }
+            )
+
+    def add_expression(
+        self,
+        expression,
+        descricao: str = "",
+    ):
+
+        self.terms.append(
+            expression
         )
+
+        if descricao:
+
+            self.diagnostico.append(
+                {
+                    "descricao": descricao,
+                    "peso": "EXP",
+                }
+            )
 
     def add_terms(
         self,
         terms,
-        peso: int,
-        descricao: str,
+        peso: int = 1,
+        descricao: str = "",
     ):
 
         for expression in terms:
@@ -63,14 +70,9 @@ class ObjectiveBuilder:
                 descricao=descricao,
             )
 
-    # ==================================================
-    # BUILD
-    # ==================================================
-
     def build(self):
 
         if not self.terms:
-
             return 0
 
         self.model.Maximize(
@@ -82,10 +84,6 @@ class ObjectiveBuilder:
         return len(
             self.terms
         )
-
-    # ==================================================
-    # RESUMO
-    # ==================================================
 
     def resumo(self):
 

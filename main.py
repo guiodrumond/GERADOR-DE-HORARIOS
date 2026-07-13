@@ -202,27 +202,6 @@ def main():
 
     objective_builder.imprimir_resumo()
 
-    # ====================================================
-    # OBJECTIVE BUILDER
-    # ====================================================
-
-    objective_builder = ObjectiveBuilder(
-        model=model,
-        variables=variables,
-        base=base,
-        regras=regras,
-    )
-
-    total_objective_terms = (
-        objective_builder.build()
-    )
-
-    print(
-    "Termos de objetivo:",
-    total_objective_terms
-    )
-    
-    objective_builder.imprimir_resumo()
 
     # ====================================================
     # ESTATÍSTICAS

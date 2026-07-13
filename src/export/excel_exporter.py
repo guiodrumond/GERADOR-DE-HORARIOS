@@ -16,6 +16,10 @@ class ExcelExporter:
 
         self.base = base
 
+        self.componente_para_area = (
+            self._criar_mapa_componente_area()
+            )
+
     # ==================================================
     # EXPORTAÇÃO
     # ==================================================
@@ -271,6 +275,12 @@ class ExcelExporter:
                         cell_data.texto
                     )
 
+                    area = (
+                        self.componente_para_area.get(
+                            componente.upper()
+                        )
+                    )
+
                     professor = (
                         cell_data.professor
                     )
@@ -289,6 +299,7 @@ class ExcelExporter:
                 else:
 
                     texto = ""
+                    area = None
 
                 cell = sheet.cell(
                     row=row,
@@ -299,6 +310,7 @@ class ExcelExporter:
                 ExcelStyles.apply_body(
                     cell,
                     texto,
+                    area,
                 )
 
     # ==================================================
@@ -514,3 +526,17 @@ class ExcelExporter:
             )
 
         return result[:31]
+
+    def _criar_mapa_componente_area(
+        self,
+    ):
+
+        mapa = {}
+
+        for esp in self.base.especialidades:
+
+            mapa[
+                esp.sigla.upper()
+            ] = esp.componente.upper()
+
+        return mapa

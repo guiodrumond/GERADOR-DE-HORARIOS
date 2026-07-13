@@ -8,35 +8,19 @@ from openpyxl.styles import (
 
 
 class ExcelStyles:
-    """
-    Centraliza os estilos usados na exportação Excel.
-
-    Esta classe não conhece regra de negócio.
-    Apenas aplica aparência visual às planilhas.
-    """
 
     TITLE_FILL = "1F4E78"
     HEADER_FILL = "D9EAF7"
     EMPTY_FILL = "F2F2F2"
     BORDER_COLOR = "BFBFBF"
 
-    COMPONENT_COLORS = {
-        "PROJ": "F4B183",
+    AREA_COLORS = {
+        "CHSA": "FCE4D6",
+        "CNST": "DDEBF7",
+        "LEST": "EADCF8",
+        "MEST": "A9D18E",
         "FTP": "FFD966",
-        "MAT": "A9D18E",
-        "POR": "9DC3E6",
-        "EDF": "D9EAD3",
-        "ART": "EADCF8",
-        "ING": "EADCF8",
-        "ART/ING": "EADCF8",
-        "HIS": "FCE4D6",
-        "SOC": "FCE4D6",
-        "HIS/SOC": "FCE4D6",
-        "GEO": "FCE4D6",
-        "FIL": "FCE4D6",
-        "FIS": "DDEBF7",
-        "QUI": "DDEBF7",
-        "BIO": "DDEBF7",
+        "PROJ": "F4B183",
     }
 
     @classmethod
@@ -79,33 +63,25 @@ class ExcelStyles:
         )
 
     @classmethod
-    def component_fill(cls, texto: str):
+    def area_fill(
+        cls,
+        area,
+    ):
 
-        cor = cls._cor_componente(
-            texto
-        )
+        if not area:
+
+            cor = cls.EMPTY_FILL
+
+        else:
+
+            cor = cls.AREA_COLORS.get(
+                area.upper(),
+                "FFFFFF",
+            )
 
         return PatternFill(
             fill_type="solid",
             fgColor=cor,
-        )
-
-    @classmethod
-    def _cor_componente(cls, texto: str):
-
-        if not texto:
-            return cls.EMPTY_FILL
-
-        texto = texto.strip().upper()
-
-        if texto in cls.COMPONENT_COLORS:
-            return cls.COMPONENT_COLORS[texto]
-
-        primeiro = texto.split("/")[0]
-
-        return cls.COMPONENT_COLORS.get(
-            primeiro,
-            "FFFFFF",
         )
 
     @classmethod
@@ -151,7 +127,8 @@ class ExcelStyles:
     def apply_body(
         cls,
         cell,
-        texto: str,
+        texto,
+        area=None,
     ):
 
         cell.font = Font(
@@ -169,8 +146,8 @@ class ExcelStyles:
 
         if texto:
 
-            cell.fill = cls.component_fill(
-                texto
+            cell.fill = cls.area_fill(
+                area
             )
 
         else:

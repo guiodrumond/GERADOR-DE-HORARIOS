@@ -1,29 +1,22 @@
 class AreaCompactnessObjective:
-    """
-    Premia blocos contínuos de áreas do conhecimento.
 
-    Usa regras:
-
-        CHSA_BLOCO_MINIMO      4
-        CHSA_BLOCO_ACEITAVEL   5
-        CHSA_BLOCO_OTIMO       6
-
-    Exemplo:
-        Se CHSA ocupar 6 aulas consecutivas no mesmo dia,
-        recebe bônus maior do que ocupar apenas 4.
-    """
-
-    PESOS = {
-        "BLOCO_MINIMO": 10,
-        "BLOCO_ACEITAVEL": 30,
-        "BLOCO_OTIMO": 60,
-    }
-
-    TIPOS_SUPORTADOS = {
+    TIPOS_AREA = {
         "BLOCO_MINIMO",
         "BLOCO_ACEITAVEL",
         "BLOCO_OTIMO",
+        "BLOCO_CONTINUO_MINIMO",
     }
+
+    AREA_PESOS = {
+        "CHSA": 10,
+        "CNST": 10,
+        "LEST": 10,
+        "MEST": 6,
+        "FTP": 6,
+        "PROJ": 4,
+    }
+
+    TAMANHO_MINIMO_JANELA = 2
 
     def __init__(
         self,
@@ -44,45 +37,28 @@ class AreaCompactnessObjective:
             self._criar_mapa_componente_area()
         )
 
-    # ==================================================
-    # BUILD
-    # ==================================================
-
     def build(self):
 
         total = 0
 
-        for regra in self.regras:
+        for area in self._areas_com_objetivo():
 
-            if regra.tipo not in self.TIPOS_SUPORTADOS:
-                continue
-
-            total += self._aplicar_regra(
-                regra
+            total += self._aplicar_area(
+                area
             )
 
         return total
 
-    # ==================================================
-    # REGRA
-    # ==================================================
-
-    def _aplicar_regra(
+    def _aplicar_area(
         self,
-        regra,
+        area,
     ):
 
-        area = regra.alvo
-
-        tamanho_janela = int(
-            regra.valor
-        )
-
-        peso = self.PESOS[
-            regra.tipo
-        ]
-
         total = 0
+
+        peso_area = self._peso_area(
+            area
+        )
 
         for turma in self._turmas():
 
@@ -92,66 +68,77 @@ class AreaCompactnessObjective:
                     dia
                 )
 
-                for aula_inicio in aulas:
+                tamanho_maximo = len(
+                    aulas
+                )
 
-                    aula_final = (
-                        aula_inicio
-                        + tamanho_janela
-                        - 1
-                    )
+                for tamanho_janela in (
+                    4,
+                    5,
+                    6,
+                ):
 
-                    if aula_final not in aulas:
-                        continue
+                    for aula_inicio in aulas:
 
-                    expressao = (
-                        self._expressao_area_na_janela(
-                            turma=turma,
-                            area=area,
-                            dia=dia,
-                            aula_inicio=aula_inicio,
-                            aula_final=aula_final,
+                        aula_final = (
+                            aula_inicio
+                            + tamanho_janela
+                            - 1
                         )
-                    )
 
-                    if expressao is None:
-                        continue
+                        if aula_final not in aulas:
+                            continue
 
-                    bonus = self.model.NewBoolVar(
-                        self._nome_seguro(
-                            f"bonus_compact_{turma}_{area}_{dia}_"
-                            f"{aula_inicio}_{aula_final}_{regra.tipo}"
+                        expressao = (
+                            self._expressao_area_na_janela(
+                                turma=turma,
+                                area=area,
+                                dia=dia,
+                                aula_inicio=aula_inicio,
+                                aula_final=aula_final,
+                            )
                         )
-                    )
 
-                    self.model.Add(
-                        expressao >= tamanho_janela
-                    ).OnlyEnforceIf(
-                        bonus
-                    )
+                        if expressao is None:
+                            continue
 
-                    self.model.Add(
-                        expressao <= tamanho_janela - 1
-                    ).OnlyEnforceIf(
-                        bonus.Not()
-                    )
+                        bonus = self.model.NewBoolVar(
+                            self._nome_seguro(
+                                f"bonus_compact_{turma}_{area}_{dia}_{aula_inicio}_{aula_final}"
+                            )
+                        )
 
-                    self.objective_builder.add_term(
-                        expression=bonus,
-                        peso=peso,
-                        descricao=(
-                            f"{area} {regra.tipo} "
-                            f"{turma} {dia} "
-                            f"{aula_inicio}-{aula_final}"
-                        ),
-                    )
+                        self.model.Add(
+                            expressao >= tamanho_janela
+                        ).OnlyEnforceIf(
+                            bonus
+                        )
 
-                    total += 1
+                        self.model.Add(
+                            expressao <= tamanho_janela - 1
+                        ).OnlyEnforceIf(
+                            bonus.Not()
+                        )
+
+                        peso = (
+                            tamanho_janela
+                            * tamanho_janela
+                            * peso_area
+                        )
+
+                        self.objective_builder.add_term(
+                            expression=bonus,
+                            peso=peso,
+                            descricao=(
+                                f"{area} COMPACTACAO "
+                                f"{turma} {dia} "
+                                f"{aula_inicio}-{aula_final}"
+                            ),
+                        )
+
+                        total += 1
 
         return total
-
-    # ==================================================
-    # EXPRESSÃO
-    # ==================================================
 
     def _expressao_area_na_janela(
         self,
@@ -222,7 +209,9 @@ class AreaCompactnessObjective:
 
         if len(bloco.componentes) == 1:
 
-            componente = bloco.componentes[0]
+            componente = (
+                bloco.componentes[0]
+            )
 
             if not self._componente_pertence_area(
                 componente,
@@ -280,9 +269,31 @@ class AreaCompactnessObjective:
 
         return total
 
-    # ==================================================
-    # ÁREA
-    # ==================================================
+    def _areas_com_objetivo(self):
+
+        areas = set()
+
+        for regra in self.regras:
+
+            if regra.tipo in self.TIPOS_AREA:
+
+                areas.add(
+                    regra.alvo
+                )
+
+        return sorted(
+            areas
+        )
+
+    def _peso_area(
+        self,
+        area,
+    ):
+
+        return self.AREA_PESOS.get(
+            area,
+            10,
+        )
 
     def _bloco_pertence_area(
         self,
@@ -329,9 +340,13 @@ class AreaCompactnessObjective:
 
         return mapa
 
-    # ==================================================
-    # SLOTS
-    # ==================================================
+    def _turmas(self):
+
+        return sorted(
+            turma.codigo
+            for turma in self.base.turmas
+            if turma.ativa
+        )
 
     def _dias(self):
 
@@ -373,22 +388,6 @@ class AreaCompactnessObjective:
             dia,
             int(aula),
         )
-
-    # ==================================================
-    # TURMAS
-    # ==================================================
-
-    def _turmas(self):
-
-        return sorted(
-            turma.codigo
-            for turma in self.base.turmas
-            if turma.ativa
-        )
-
-    # ==================================================
-    # UTIL
-    # ==================================================
 
     def _nome_seguro(
         self,

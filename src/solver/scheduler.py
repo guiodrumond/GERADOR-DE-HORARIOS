@@ -11,6 +11,8 @@ class Scheduler:
 
         solver = cp_model.CpSolver()
 
+        solver.parameters.max_time_in_seconds = 30
+
         status = solver.Solve(
             self.model
         )
