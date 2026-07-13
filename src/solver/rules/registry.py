@@ -48,7 +48,7 @@ class RuleRegistry:
         "BLOCO_OTIMO": None,
         "BLOCO_ACEITAVEL": None,
         "BLOCO_MINIMO": None,
-        "BLOCO_CONTINUO": BlockContinuousHandler,
+        "BLOCO_CONTINUO_MINIMO": BlockContinuousHandler,
 
         # ---------------------------------
         # Regras de complemento

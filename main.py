@@ -68,6 +68,10 @@ from src.solver.objectives.area_grouping_objective import (
     AreaGroupingObjective,
 )
 
+from src.solver.validators.area_continuity_validator import (
+    AreaContinuityValidator,
+)
+
 ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
 
 
@@ -333,6 +337,14 @@ def main():
         "Células preenchidas:",
         grid.total_cells()
     )
+
+    area_validator = AreaContinuityValidator(
+        base=base,
+        grid=grid,
+        regras=regras,
+    )
+
+    area_validator.print_report()
 
     # ====================================================
     # VISUALIZAÇÃO

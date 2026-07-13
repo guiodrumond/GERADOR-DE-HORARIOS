@@ -1,13 +1,15 @@
 class BlockContinuousHandler:
     """
-    Garante que todas as aulas de uma área/componente
-    ocorram em um único bloco contínuo no mesmo dia.
+    BLOCO_CONTINUO_MINIMO
 
     Exemplo:
-        CHSA_BLOCO_CONTINUO = S
 
-    Para cada turma:
-        GEO + FIL + HIS/SOC precisam caber em uma janela contínua.
+        CHSA_BLOCO_CONTINUO_MINIMO = 4
+
+    Significa:
+
+        Para cada turma, deve existir pelo menos uma janela
+        contínua de 4 aulas em que todas as aulas sejam da área CHSA.
     """
 
     def __init__(
@@ -32,12 +34,13 @@ class BlockContinuousHandler:
         regra,
     ):
 
-        if regra.valor != "S":
-            return 0
-
-        quantidade = 0
+        minimo = int(
+            regra.valor
+        )
 
         alvo = regra.alvo
+
+        quantidade = 0
 
         for turma in self._turmas():
 
@@ -49,17 +52,10 @@ class BlockContinuousHandler:
             if not blocos:
                 continue
 
-            tamanho_total = self._tamanho_total(
-                blocos
-            )
-
-            if tamanho_total == 0:
-                continue
-
             janelas = self._criar_janelas(
                 turma=turma,
                 alvo=alvo,
-                tamanho_total=tamanho_total,
+                tamanho_minimo=minimo,
             )
 
             if not janelas:
@@ -67,50 +63,57 @@ class BlockContinuousHandler:
                 raise ValueError(
                     f"Não há janela possível para "
                     f"{alvo} na turma {turma} "
-                    f"com tamanho {tamanho_total}."
+                    f"com tamanho mínimo {minimo}."
                 )
 
             self.model.Add(
                 sum(
                     janela_var
                     for janela_var, _, _ in janelas
-                ) == 1
+                ) >= 1
             )
 
             quantidade += 1
 
-            for janela_var, dia, aula_inicio in janelas:
+            for (
+                janela_var,
+                dia,
+                aula_inicio,
+            ) in janelas:
 
                 aula_final = (
                     aula_inicio
-                    + tamanho_total
+                    + minimo
                     - 1
                 )
 
+                termos = []
+
                 for bloco in blocos:
 
-                    vars_compativeis = (
-                        self._vars_bloco_na_janela(
+                    termos.extend(
+                        self._termos_area_na_janela(
                             bloco=bloco,
+                            alvo=alvo,
                             dia=dia,
                             aula_inicio=aula_inicio,
                             aula_final=aula_final,
                         )
                     )
 
-                    if not vars_compativeis:
-
-                        self.model.Add(
-                            janela_var == 0
-                        )
-
-                        continue
+                if not termos:
 
                     self.model.Add(
-                        sum(vars_compativeis) == 1
-                    ).OnlyEnforceIf(
-                        janela_var
+                        janela_var == 0
                     )
+
+                    continue
+
+                self.model.Add(
+                    sum(termos) >= minimo
+                ).OnlyEnforceIf(
+                    janela_var
+                )
 
         return quantidade
 
@@ -162,28 +165,15 @@ class BlockContinuousHandler:
 
         return False
 
-    def _tamanho_total(
-        self,
-        blocos,
-    ):
-
-        total = 0
-
-        for bloco in blocos:
-
-            total += bloco.tamanho
-
-        return total
-
     # ==================================================
-    # JANELAS CONTÍNUAS
+    # JANELAS
     # ==================================================
 
     def _criar_janelas(
         self,
         turma,
         alvo,
-        tamanho_total,
+        tamanho_minimo,
     ):
 
         janelas = []
@@ -198,7 +188,7 @@ class BlockContinuousHandler:
 
                 aula_final = (
                     aula_inicio
-                    + tamanho_total
+                    + tamanho_minimo
                     - 1
                 )
 
@@ -206,7 +196,14 @@ class BlockContinuousHandler:
                     continue
 
                 nome = self._nome_seguro(
-                    f"janela_{turma}_{alvo}_{dia}_{aula_inicio}_{aula_final}"
+                    (
+                        f"janela_"
+                        f"{turma}_"
+                        f"{alvo}_"
+                        f"{dia}_"
+                        f"{aula_inicio}_"
+                        f"{aula_final}"
+                    )
                 )
 
                 var = self.model.NewBoolVar(
@@ -223,15 +220,20 @@ class BlockContinuousHandler:
 
         return janelas
 
-    def _vars_bloco_na_janela(
+    # ==================================================
+    # TERMOS DA ÁREA NA JANELA
+    # ==================================================
+
+    def _termos_area_na_janela(
         self,
         bloco,
+        alvo,
         dia,
         aula_inicio,
         aula_final,
     ):
 
-        resultado = []
+        termos = []
 
         for slot_id, var in self.variables[
             bloco.id
@@ -246,24 +248,119 @@ class BlockContinuousHandler:
             if slot_dia != dia:
                 continue
 
-            bloco_inicio = slot_aula
+            coeficiente = (
+                self._coeficiente_area_na_janela(
+                    bloco=bloco,
+                    alvo=alvo,
+                    bloco_inicio=slot_aula,
+                    janela_inicio=aula_inicio,
+                    janela_final=aula_final,
+                )
+            )
+
+            if coeficiente > 0:
+
+                termos.append(
+                    coeficiente * var
+                )
+
+        return termos
+
+    def _coeficiente_area_na_janela(
+        self,
+        bloco,
+        alvo,
+        bloco_inicio,
+        janela_inicio,
+        janela_final,
+    ):
+
+        # Caso 1:
+        # Bloco comum: um único componente repetido
+        # Exemplo: FIS tamanho 2, GEO tamanho 2, FTP tamanho 4
+
+        if len(bloco.componentes) == 1:
+
+            componente = (
+                bloco.componentes[0]
+            )
+
+            if not self._componente_pertence_ao_alvo(
+                componente,
+                alvo,
+            ):
+                return 0
 
             bloco_final = (
-                slot_aula
+                bloco_inicio
                 + bloco.tamanho
                 - 1
             )
 
+            inicio_intersecao = max(
+                bloco_inicio,
+                janela_inicio,
+            )
+
+            fim_intersecao = min(
+                bloco_final,
+                janela_final,
+            )
+
+            if inicio_intersecao > fim_intersecao:
+                return 0
+
+            return (
+                fim_intersecao
+                - inicio_intersecao
+                + 1
+            )
+
+        # Caso 2:
+        # Par pedagógico decomposto.
+        # Exemplo: ART/ING, HIS/SOC.
+        #
+        # Cada componente ocupa uma aula na ordem.
+
+        total = 0
+
+        for offset, componente in enumerate(
+            bloco.componentes
+        ):
+
+            aula = (
+                bloco_inicio
+                + offset
+            )
+
             if (
-                bloco_inicio >= aula_inicio
-                and bloco_final <= aula_final
+                janela_inicio
+                <= aula
+                <= janela_final
+                and self._componente_pertence_ao_alvo(
+                    componente,
+                    alvo,
+                )
             ):
 
-                resultado.append(
-                    var
-                )
+                total += 1
 
-        return resultado
+        return total
+
+    def _componente_pertence_ao_alvo(
+        self,
+        componente,
+        alvo,
+    ):
+
+        if componente == alvo:
+            return True
+
+        area = self.componente_para_area.get(
+            componente
+        )
+
+        return area == alvo
 
     # ==================================================
     # MAPAS
