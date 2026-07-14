@@ -1,465 +1,153 @@
+import argparse
+import logging
 from pathlib import Path
-
 from ortools.sat.python import cp_model
 
 from src.data.loader import ExcelLoader
+from src.builder.pedagogical_blocks import PedagogicalBlockBuilder
+from src.solver.variables import DecisionVariableBuilder
+from src.solver.rules.parser import RuleParser
+from src.solver.rules.engine import RuleEngine
+from src.solver.constraints.block_assignment import BlockAssignmentConstraint
+from src.solver.constraints.turma_conflicts import TurmaConflictConstraint
+from src.solver.constraints.professor_conflicts import ProfessorConflictConstraint
+from src.solver.validators.professor_validator import ProfessorValidator
+from src.solver.scheduler import Scheduler
+from src.solver.stats import SolverStats
+from src.scheduling.schedule_builder import ScheduleBuilder
+from src.scheduling.grid_builder import GridBuilder
+from src.scheduling.grid_printer import GridPrinter
+from src.export.excel_exporter import ExcelExporter
+from src.solver.objectives.objective_builder import ObjectiveBuilder
+from src.solver.objectives.area_grouping_objective import AreaGroupingObjective
+from src.solver.validators.area_continuity_validator import AreaContinuityValidator
+from src.solver.objectives.area_compactness_objective import AreaCompactnessObjective
+from src.solver.planning.planning_window_builder import PlanningWindowBuilder
+from src.solver.planning.planning_variables import PlanningVariables
+from src.solver.planning.teacher_availability_builder import TeacherAvailabilityBuilder
+from src.solver.planning.collective_planning_objective import CollectivePlanningObjective
+from src.solver.planning.planning_result_builder import PlanningResultBuilder
 
-from src.builder.pedagogical_blocks import (
-    PedagogicalBlockBuilder,
-)
-
-from src.solver.variables import (
-    DecisionVariableBuilder,
-)
-
-from src.solver.rules.parser import (
-    RuleParser,
-)
-
-from src.solver.rules.engine import (
-    RuleEngine,
-)
-
-from src.solver.constraints.block_assignment import (
-    BlockAssignmentConstraint,
-)
-
-from src.solver.constraints.turma_conflicts import (
-    TurmaConflictConstraint,
-)
-
-from src.solver.constraints.professor_conflicts import (
-    ProfessorConflictConstraint,
-)
-
-from src.solver.validators.professor_validator import (
-    ProfessorValidator,
-)
-
-from src.solver.scheduler import (
-    Scheduler,
-)
-
-from src.solver.stats import (
-    SolverStats,
-)
-
-from src.scheduling.schedule_builder import (
-    ScheduleBuilder,
-)
-
-from src.scheduling.grid_builder import (
-    GridBuilder,
-)
-
-from src.scheduling.grid_printer import (
-    GridPrinter,
-)
-
-from src.export.excel_exporter import (
-    ExcelExporter,
-)
-
-from src.solver.objectives.objective_builder import (
-    ObjectiveBuilder,
-)
-
-from src.solver.objectives.area_grouping_objective import (
-    AreaGroupingObjective,
-)
-
-from src.solver.validators.area_continuity_validator import (
-    AreaContinuityValidator,
-)
-
-from src.solver.objectives.area_compactness_objective import (
-    AreaCompactnessObjective,
-)
-
-from src.solver.planning.planning_window_builder import (
-    PlanningWindowBuilder,
-)
-
-from src.solver.planning.planning_variables import (
-    PlanningVariables,
-)
-
-from src.solver.planning.teacher_availability_builder import (
-    TeacherAvailabilityBuilder,
-)
-
-ARQUIVO = "excel/GERADOR_DE_HORARIOS.xlsx"
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
-def main():
-
-    print()
-    print("===== GERADOR DE HORÁRIOS =====")
-    print()
+def main(input_excel: str, target_turma: str):
+    logging.info("===== INICIANDO GERADOR DE HORÁRIOS =====")
 
     # ====================================================
-    # CARREGAMENTO
+    # CARREGAMENTO E BLOCOS
     # ====================================================
-
-    loader = ExcelLoader(
-        ARQUIVO
-    )
-
-    base = loader.load()
+    base = ExcelLoader(input_excel).load()
+    base.blocos = PedagogicalBlockBuilder(base).build()
 
     # ====================================================
-    # BLOCOS PEDAGÓGICOS
+    # REGRAS E VARIÁVEIS
     # ====================================================
-
-    builder = PedagogicalBlockBuilder(
-        base
-    )
-
-    base.blocos = builder.build()
+    regras = RuleParser().parse(base.restricoes)
+    model, variables = DecisionVariableBuilder(base).build()
 
     # ====================================================
-    # REGRAS PARAMETRIZADAS
+    # PLANEJAMENTO COLETIVO (Variáveis e Disponibilidade)
     # ====================================================
-
-    parser = RuleParser()
-
-    regras = parser.parse(
-        base.restricoes
-    )
-
-    # ====================================================
-    # VARIÁVEIS CP-SAT
-    # ====================================================
-
-    variable_builder = (
-        DecisionVariableBuilder(
-            base
-        )
-    )
-
-    model, variables = (
-        variable_builder.build()
-    )
-
+    planning_windows = PlanningWindowBuilder(base=base, tamanho_janela=2).build()
+    planning_variables = PlanningVariables(model=model, planning_windows=planning_windows, base=base).build()
     
-    planning_windows = (
-        PlanningWindowBuilder(
-            base=base,
-            tamanho_janela=2,
-        ).build()
-        )
+    teacher_availability = TeacherAvailabilityBuilder(
+        model=model, variables=variables, base=base, planning_windows=planning_windows
+    ).build()
 
-    planning_variables = (
-        PlanningVariables(
-            model=model,
-            planning_windows=planning_windows,
-        ).build()
-    )
-
-    print()
-    print("===== JANELAS DE PLANEJAMENTO =====")
-    print()
-
-    print(
-        "Total:",
-        len(planning_windows)
-    )
-
-    for window in planning_windows:
-
-        print(
-            window.id,
-            "|",
-            window.dia,
-            "|",
-            window.aula_inicio,
-            "-",
-            window.aula_final,
-            "|",
-            window.slots,
-        )
-
-    teacher_availability = (
-        TeacherAvailabilityBuilder(
-            model=model,
-            variables=variables,
-            base=base,
-            planning_windows=planning_windows,
-        ).build()
-    )
-
-    print()
-    print("===== DISPONIBILIDADE DOCENTE =====")
-    print()
-
-    print(
-        "Janelas:",
-        len(teacher_availability)
-    )
-
-    primeira_janela = next(
-        iter(
-            teacher_availability
-        )
-    )
-
-    print(
-        primeira_janela,
-        "| professores:",
-        len(
-            teacher_availability[
-                primeira_janela
-            ]
-        )
-    )
+    logging.info(f"Janelas de planejamento criadas: {len(planning_windows)}")
 
     # ====================================================
-    # RULE ENGINE
+    # ENGINE E CONSTRAINTS
     # ====================================================
-
-    rule_engine = RuleEngine(
-        model=model,
-        variables=variables,
-        base=base,
-        regras=regras,
-    )
-
+    rule_engine = RuleEngine(model=model, variables=variables, base=base, regras=regras)
     rule_engine.build()
-
-    resumo_regras = (
-        rule_engine.resumo()
-    )
-
-    # ====================================================
-    # CONSTRAINTS BASE
-    # ====================================================
-
-    total_block_assignment = (
-        BlockAssignmentConstraint(
-            model,
-            variables,
-        ).build()
-    )
-
-    total_turma_conflicts = (
-        TurmaConflictConstraint(
-            model,
-            variables,
-            base,
-        ).build()
-    )
-
-    total_professor_conflicts = (
-        ProfessorConflictConstraint(
-            model,
-            variables,
-            base,
-        ).build()
-    )
+    
+    BlockAssignmentConstraint(model, variables).build()
+    TurmaConflictConstraint(model, variables, base).build()
+    ProfessorConflictConstraint(model, variables, base).build()
 
     # ====================================================
-    # OBJECTIVE BUILDER
+    # OBJETIVOS (Onde a mágica do Planejamento acontece)
     # ====================================================
-
     objective_builder = ObjectiveBuilder(
-        model=model,
-        variables=variables,
-        base=base,
-        regras=regras,
+        model=model, variables=variables, base=base, regras=regras
     )
 
-    area_compactness = AreaCompactnessObjective(
+    AreaCompactnessObjective(
         model=model,
         variables=variables,
         base=base,
         regras=regras,
         objective_builder=objective_builder,
-    )
+    ).build()
 
-    total_area_compactness_terms = (
-        area_compactness.build()
-    )
+    # AQUI ESTÁ A ATUALIZAÇÃO: Passando o base=base
+    CollectivePlanningObjective(
+        model=model,
+        planning_variables=planning_variables,
+        teacher_availability=teacher_availability,
+        objective_builder=objective_builder,
+        base=base, 
+    ).build()
 
-    total_objective_terms = (
-        objective_builder.build()
-    )
-
+    # Constrói a função objetivo final no modelo
+    objective_builder.build()
     objective_builder.imprimir_resumo()
-
-
-    # ====================================================
-    # ESTATÍSTICAS
-    # ====================================================
-
-    stats = SolverStats(
-        base=base,
-        variables=variables,
-        resumo_regras=resumo_regras,
-        total_block_assignment=total_block_assignment,
-        total_turma_conflicts=total_turma_conflicts,
-        total_professor_conflicts=total_professor_conflicts,
-    )
-
-    stats.imprimir()
 
     # ====================================================
     # SOLVER
     # ====================================================
+    logging.info("Executando Solver...")
+    scheduler = Scheduler(model)
+    solver, status = scheduler.solve()
 
-    print()
-    print("===== EXECUTANDO SOLVER =====")
-    print()
-
-    scheduler = Scheduler(
-        model
-    )
-
-    solver, status = (
-        scheduler.solve()
-    )
-
-    print()
-
-    if status == cp_model.OPTIMAL:
-
-        print(
-            "STATUS: OPTIMAL"
-        )
-
-    elif status == cp_model.FEASIBLE:
-
-        print(
-            "STATUS: FEASIBLE"
-        )
-
-    elif status == cp_model.INFEASIBLE:
-
-        print(
-            "STATUS: INFEASIBLE"
-        )
-
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        logging.error(f"Não foi possível encontrar uma solução. STATUS: {status}")
         return
 
-    else:
-
-        print(
-            "STATUS:",
-            status,
-        )
-
-        return
+    logging.info("Solução encontrada. Validando e extraindo resultados...")
 
     # ====================================================
-    # VALIDAÇÃO DOCENTE
+    # RESULTADOS DO PLANEJAMENTO
     # ====================================================
+    planning_result = PlanningResultBuilder(
+        solver=solver,
+        planning_variables=planning_variables,
+        planning_windows=planning_windows,
+        teacher_availability=teacher_availability,
+    ).build()
 
-    validator = (
-        ProfessorValidator(
-            base=base,
-            variables=variables,
-            solver=solver,
-        )
-    )
-
-    validator.print_report()
-
+    PlanningResultBuilder.print_report(planning_result)
+    
     # ====================================================
-    # SCHEDULE
+    # CONSTRUÇÃO DA GRADE E EXPORTAÇÃO
     # ====================================================
-
-    print()
-    print("===== CONSTRUINDO SCHEDULE =====")
-    print()
-
-    schedule = (
-        ScheduleBuilder(
-            base=base,
-            variables=variables,
-            solver=solver,
-        ).build()
-    )
-
-    # ====================================================
-    # GRID
-    # ====================================================
-
-    print()
-    print("===== CONSTRUINDO GRADE =====")
-    print()
-
-    grid = (
-        GridBuilder(
-            schedule
-        ).build()
-    )
-
-    print(
-        "Turmas na grade:",
-        len(
-            grid.turmas()
-        )
-    )
-
-    print(
-        "Células preenchidas:",
-        grid.total_cells()
-    )
-
-    area_validator = AreaContinuityValidator(
+    schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
+    grid = GridBuilder(schedule).build()
+    
+    print("\n===== AMOSTRA DE HORÁRIO =====")
+    GridPrinter.print_turma(grid, target_turma)
+    
+    print("\n===== EXPORTAÇÃO EXCEL =====")
+    output_file = Path("outputs") / "horario_gerado.xlsx"
+    
+    ExcelExporter(
         base=base,
+        planning_result=planning_result,
+    ).export(
         grid=grid,
-        regras=regras,
+        caminho_saida=str(output_file)
     )
-
-    area_validator.print_report()
-
-    # ====================================================
-    # VISUALIZAÇÃO
-    # ====================================================
-
-    print()
-    print("===== AMOSTRA DE HORÁRIO =====")
-
-    GridPrinter.print_turma(
-        grid,
-        "1ADM01",
-    )
-
-    # ====================================================
-    # EXPORTAÇÃO EXCEL
-    # ====================================================
-
-    print()
-    print("===== EXPORTAÇÃO EXCEL =====")
-    print()
-
-    output_file = (
-        Path("outputs")
-        / "horario_gerado.xlsx"
-    )
-
-    exporter = ExcelExporter(
-        base
-    )
-
-    exporter.export(
-        grid=grid,
-        caminho_saida=str(
-            output_file
-        ),
-    )
-
-    print(
-        "Arquivo gerado:"
-    )
-
-    print(
-        output_file.resolve()
-    )
-
-    print()
-    print("===== PROCESSO FINALIZADO =====")
+    
+    logging.info(f"Processo finalizado com sucesso. Arquivo em: {output_file.resolve()}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Gerador de Horários Escolares usando CP-SAT")
+    parser.add_argument("--input", type=str, default="excel/GERADOR_DE_HORARIOS.xlsx", help="Caminho para o Excel de entrada")
+    parser.add_argument("--turma", type=str, default="1ADM01", help="Turma para visualização prévia")
+    args = parser.parse_args()
+    
+    main(input_excel=args.input, target_turma=args.turma)

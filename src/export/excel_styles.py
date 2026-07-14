@@ -21,6 +21,7 @@ class ExcelStyles:
         "MEST": "A9D18E",
         "FTP": "FFD966",
         "PROJ": "F4B183",
+        "PLANEJAMENTO": "C6E0B4",
     }
 
     @classmethod
