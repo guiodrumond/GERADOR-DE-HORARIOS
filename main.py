@@ -8,9 +8,9 @@ from src.builder.pedagogical_blocks import PedagogicalBlockBuilder
 from src.solver.variables import DecisionVariableBuilder
 from src.solver.rules.parser import RuleParser
 from src.solver.rules.engine import RuleEngine
-from src.solver.constraints.block_assignment import BlockAssignmentConstraint
-from src.solver.constraints.turma_conflicts import TurmaConflictConstraint
-from src.solver.constraints.professor_conflicts import ProfessorConflictConstraint
+from src.solver.constraints.block_assignment_constraint import BlockAssignmentConstraint
+from src.solver.constraints.class_conflict_constraint import TurmaConflictConstraint
+from src.solver.constraints.professor_conflict_constraint import ProfessorConflictConstraint
 from src.solver.validators.professor_validator import ProfessorValidator
 from src.solver.scheduler import Scheduler
 from src.solver.stats import SolverStats
@@ -27,6 +27,8 @@ from src.solver.planning.planning_variables import PlanningVariables
 from src.solver.planning.teacher_availability_builder import TeacherAvailabilityBuilder
 from src.solver.planning.collective_planning_objective import CollectivePlanningObjective
 from src.solver.planning.planning_result_builder import PlanningResultBuilder
+from src.solver.objectives.area_contiguity_objective import AreaContiguityObjective
+from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairsConstraint
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -59,7 +61,7 @@ def main(input_excel: str, target_turma: str):
     logging.info(f"Janelas de planejamento criadas: {len(planning_windows)}")
 
     # ====================================================
-    # ENGINE E CONSTRAINTS
+    # ENGINE E CONSTRAINTS (Apenas a Física Básica LIGADA)
     # ====================================================
     rule_engine = RuleEngine(model=model, variables=variables, base=base, regras=regras)
     rule_engine.build()
@@ -69,7 +71,7 @@ def main(input_excel: str, target_turma: str):
     ProfessorConflictConstraint(model, variables, base).build()
 
     # ====================================================
-    # OBJETIVOS (Onde a mágica do Planejamento acontece)
+    # OBJETIVOS (Desligados para o Teste de Isolamento)
     # ====================================================
     objective_builder = ObjectiveBuilder(
         model=model, variables=variables, base=base, regras=regras
@@ -83,13 +85,27 @@ def main(input_excel: str, target_turma: str):
         objective_builder=objective_builder,
     ).build()
 
-    # AQUI ESTÁ A ATUALIZAÇÃO: Passando o base=base
+    AreaContiguityObjective(
+        model=model,
+        variables=variables,
+        base=base,
+        objective_builder=objective_builder,
+    ).build()
+
     CollectivePlanningObjective(
         model=model,
         planning_variables=planning_variables,
         teacher_availability=teacher_availability,
         objective_builder=objective_builder,
         base=base, 
+    ).build()
+
+
+    PedagogicalPairsConstraint(
+        model=model,
+        variables=variables,
+        base=base,
+        objective_builder=objective_builder,
     ).build()
 
     # Constrói a função objetivo final no modelo
@@ -119,7 +135,7 @@ def main(input_excel: str, target_turma: str):
         teacher_availability=teacher_availability,
     ).build()
 
-    PlanningResultBuilder.print_report(planning_result)
+    PlanningResultBuilder.print_report(planning_result)  # Desligado para não sujar o log do teste
     
     # ====================================================
     # CONSTRUÇÃO DA GRADE E EXPORTAÇÃO
@@ -127,8 +143,11 @@ def main(input_excel: str, target_turma: str):
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
     grid = GridBuilder(schedule).build()
     
-    print("\n===== AMOSTRA DE HORÁRIO =====")
-    GridPrinter.print_turma(grid, target_turma)
+    print("\n===== AMOSTRA DE HORÁRIO: 1ADM01 =====")
+    GridPrinter.print_turma(grid, "1ADM01")
+    
+    print("\n===== AMOSTRA DE HORÁRIO: 1ADM02 =====")
+    GridPrinter.print_turma(grid, "1ADM02")
     
     print("\n===== EXPORTAÇÃO EXCEL =====")
     output_file = Path("outputs") / "horario_gerado.xlsx"

@@ -95,24 +95,21 @@ class TurmaConflictConstraint:
             )
 
     def _turmas(self):
+        # MUDANÇA: Agora pegamos as turmas reais cadastradas na base, 
+        # para garantir que o Solver trate 1ADM01 e 1ADM02 separadamente
+        return sorted({turma.codigo for turma in self.base.turmas})
 
-        return sorted(
-            {
-                bloco.turma
-                for bloco in self.base.blocos
-            }
-        )
-
-    def _blocos_da_turma(
-        self,
-        turma: str,
-    ):
-
-        return [
-            bloco
-            for bloco in self.base.blocos
-            if bloco.turma == turma
-        ]
+    def _blocos_da_turma(self, turma: str):
+            blocos_da_turma = []
+            for bloco in self.base.blocos:
+                # MUDANÇA: Separa o nome da turma caso seja um agrupamento (ex: "1ADM01+1ADM02")
+                # Assim, o bloco ocupará a grade da 1ADM01 e também da 1ADM02
+                turmas_do_bloco = [t.strip() for t in bloco.turma.split('+')]
+                
+                if turma in turmas_do_bloco:
+                    blocos_da_turma.append(bloco)
+                    
+            return blocos_da_turma
 
     def _slot_id(
         self,

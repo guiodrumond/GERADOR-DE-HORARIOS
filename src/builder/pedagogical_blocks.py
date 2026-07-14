@@ -268,30 +268,27 @@ class PedagogicalBlockBuilder:
     # =====================================================
 
     def _criar_pares_pedagogicos(self, turma: str):
-
-        blocos = []
-
-        for par in self.base.pares_pedagogicos:
-
-            bloco_id = (
-                f"{turma}_"
-                f"{par.especialidade_1}_"
-                f"{par.especialidade_2}"
-            )
-
-            blocos.append(
-                BlocoPedagogico(
-                    id=bloco_id,
-                    turma=turma,
-                    componentes=[
-                        par.especialidade_1,
-                        par.especialidade_2,
-                    ],
-                    tamanho=2,
+            blocos = []
+            for par in self.base.pares_pedagogicos:
+                # Cria bloco individual para a disciplina 1
+                blocos.append(
+                    BlocoPedagogico(
+                        id=f"{turma}_{par.especialidade_1}_UNIT",
+                        turma=turma,
+                        componentes=[par.especialidade_1],
+                        tamanho=1,
+                    )
                 )
-            )
-
-        return blocos
+                # Cria bloco individual para a disciplina 2
+                blocos.append(
+                    BlocoPedagogico(
+                        id=f"{turma}_{par.especialidade_2}_UNIT",
+                        turma=turma,
+                        componentes=[par.especialidade_2],
+                        tamanho=1,
+                    )
+                )
+            return blocos
 
     # =====================================================
     # GENÉRICOS

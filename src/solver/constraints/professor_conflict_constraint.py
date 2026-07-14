@@ -91,19 +91,14 @@ class ProfessorConflictConstraint:
             )
 
     def _criar_mapa_professores(self):
-
-        mapa = {}
-
-        for atribuicao in self.base.atribuicoes:
-
-            chave = (
-                atribuicao.turma,
-                atribuicao.especialidade,
-            )
-
-            mapa[chave] = atribuicao.professor
-
-        return mapa
+            # MUDANÇA: Agora o mapa guarda uma LISTA de professores para cada chave
+            mapa = {}
+            for atribuicao in self.base.atribuicoes:
+                chave = (atribuicao.turma, atribuicao.especialidade)
+                if chave not in mapa:
+                    mapa[chave] = []
+                mapa[chave].append(atribuicao.professor)
+            return mapa
 
     def _professores_usados(self):
 
@@ -249,3 +244,15 @@ class ProfessorConflictConstraint:
             <= aula_alvo
             <= aula_final
         )
+    
+    def _professores_do_bloco(self, bloco: BlocoPedagogico):
+        professores = set()
+        for componente in bloco.componentes:
+            # Buscar todos os professores ligados a essa especialidade na turma
+            chave = (bloco.turma, componente)
+            lista_professores = self.mapa_professores.get(chave, [])
+            
+            # Adiciona todos os professores exigidos pelo "pacote"
+            for professor in lista_professores:
+                professores.add(professor)
+        return professores
