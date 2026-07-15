@@ -3,6 +3,7 @@ class AreaCompactnessObjective:
     Sistema de Premiação focado em SEQUÊNCIAS CONTÍNUAS (Janela Deslizante).
     Só pontua se as aulas da mesma área estiverem estritamente coladas umas nas outras,
     suportando corretamente blocos multi-aulas (dobradinhas/quádruplas).
+    Lê os pesos diretamente da aba CONFIG do Excel.
     """
 
     def __init__(self, model, variables, base, regras, objective_builder):
@@ -65,29 +66,35 @@ class AreaCompactnessObjective:
 
                     # 2. Janelas Deslizantes para Sequências Contínuas
                     
-                    # Janelas de tamanho 4 (Mínimo desejável)
+                    # === CONEXÃO COM A ABA CONFIG DO EXCEL ===
+                    config = getattr(self.base, 'config', {})
+                    # Lê o peso máximo. Se não existir, o fallback padrão é 100.
+                    peso_base = float(config.get(f"PESO_{componente_area}_BLOCO6", 
+                                      config.get(f"PESO_{componente_area}_BLOCO5", 100)))
+
+                    # Janelas de tamanho 4 (Mínimo desejável - Ganha 30% do peso)
                     for i in range(len(aulas_do_dia) - 3):
                         janela = [slot_is_area[aulas_do_dia[j]] for j in range(i, i + 4)]
                         b_win4 = self.model.NewBoolVar(f"win4_{turma}_{componente_area}_{dia}_{i}")
                         self.model.Add(sum(janela) == 4).OnlyEnforceIf(b_win4)
                         self.model.Add(sum(janela) < 4).OnlyEnforceIf(b_win4.Not())
-                        self._adicionar_premio(b_win4, 150, f"SEQ CONTINUA 4 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+3]}")
+                        self._adicionar_premio(b_win4, int(peso_base * 0.3), f"SEQ CONTINUA 4 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+3]}")
 
-                    # Janelas de tamanho 5
+                    # Janelas de tamanho 5 (Aceitável - Ganha 60% do peso)
                     for i in range(len(aulas_do_dia) - 4):
                         janela = [slot_is_area[aulas_do_dia[j]] for j in range(i, i + 5)]
                         b_win5 = self.model.NewBoolVar(f"win5_{turma}_{componente_area}_{dia}_{i}")
                         self.model.Add(sum(janela) == 5).OnlyEnforceIf(b_win5)
                         self.model.Add(sum(janela) < 5).OnlyEnforceIf(b_win5.Not())
-                        self._adicionar_premio(b_win5, 300, f"SEQ CONTINUA 5 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+4]}")
+                        self._adicionar_premio(b_win5, int(peso_base * 0.6), f"SEQ CONTINUA 5 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+4]}")
 
-                    # Janelas de tamanho 6
+                    # Janelas de tamanho 6 (Ótimo - Ganha 100% do peso)
                     for i in range(len(aulas_do_dia) - 5):
                         janela = [slot_is_area[aulas_do_dia[j]] for j in range(i, i + 6)]
                         b_win6 = self.model.NewBoolVar(f"win6_{turma}_{componente_area}_{dia}_{i}")
                         self.model.Add(sum(janela) == 6).OnlyEnforceIf(b_win6)
                         self.model.Add(sum(janela) < 6).OnlyEnforceIf(b_win6.Not())
-                        self._adicionar_premio(b_win6, 500, f"SEQ CONTINUA 6 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+5]}")
+                        self._adicionar_premio(b_win6, int(peso_base), f"SEQ CONTINUA 6 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+5]}")
 
     def _adicionar_premio(self, variavel_booleana, pontos, descricao):
         if hasattr(self.objective_builder, 'add_term'):
