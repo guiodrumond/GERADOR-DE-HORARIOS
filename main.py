@@ -19,12 +19,14 @@ from src.scheduling.grid_builder import GridBuilder
 from src.scheduling.grid_printer import GridPrinter
 from src.export.excel_exporter import ExcelExporter
 from src.solver.objectives.objective_builder import ObjectiveBuilder
+from src.solver.objectives.area_compactness_objective import AreaCompactnessObjective
 from src.solver.planning.planning_window_builder import PlanningWindowBuilder
 from src.solver.planning.planning_variables import PlanningVariables
 from src.solver.planning.teacher_availability_builder import TeacherAvailabilityBuilder
 from src.solver.planning.planning_result_builder import PlanningResultBuilder
 from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairsConstraint
 from src.scheduling.pedagogical_reporter import PedagogicalPairsReporter
+from src.scheduling.area_grouping_reporter import AreaGroupingReporter
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -69,10 +71,25 @@ def main(input_excel: str, target_turma: str):
         base=base,
     ).build()
 
+    # ====================================================
+    # SISTEMA DE PREMIAÇÃO (SOFT CONSTRAINTS)
+    # ====================================================
     objective_builder = ObjectiveBuilder(
         model=model, variables=variables, base=base, regras=regras
     )
+    
+    # Injetamos o nosso novo objetivo de compactação de Áreas
+    AreaCompactnessObjective(
+        model=model,
+        variables=variables,
+        base=base,
+        regras=regras,
+        objective_builder=objective_builder,
+    ).build()
+
+    # Compila os objetivos no modelo e imprime o resumo
     objective_builder.build()
+    objective_builder.imprimir_resumo()
 
     logging.info("Executando Solver...")
     scheduler = Scheduler(model)
@@ -100,6 +117,24 @@ def main(input_excel: str, target_turma: str):
         base=base,
         analise_previa=analise_atribuicao
     ).print_report()
+
+    schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
+    grid = GridBuilder(schedule).build()
+    
+    # === OS NOSSOS DASHBOARDS DE QUALIDADE ===
+    PedagogicalPairsReporter(
+        solver=solver, 
+        variables=variables, 
+        base=base,
+        analise_previa=analise_atribuicao
+    ).print_report()
+    
+    AreaGroupingReporter(
+        solver=solver,
+        variables=variables,
+        base=base
+    ).print_report()
+    # ==========================================
         
     print("\n===== AMOSTRA DE HORÁRIO: 1ADM01 =====")
     GridPrinter.print_turma(grid, "1ADM01")

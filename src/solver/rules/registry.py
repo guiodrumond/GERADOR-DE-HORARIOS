@@ -1,34 +1,54 @@
+import logging
+
+# Importações dos Handlers Ativos
 from src.solver.rules.handlers.fixed_schedule_handler import FixedScheduleHandler
 from src.solver.rules.handlers.different_days_handler import DifferentDaysHandler
 from src.solver.rules.handlers.max_consecutive_handler import MaxConsecutiveHandler
 from src.solver.rules.handlers.block_continuous_handler import BlockContinuousHandler
+
+class NoOpHandler:
+    """
+    Padrão Null Object (No-Operation).
+    Usado para regras que existem no Excel, mas que são tratadas de forma 
+    estrutural em outras partes do sistema (como objetivos ou constraints core).
+    Evita que o RuleEngine quebre e limpa os logs de aviso.
+    """
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def apply(self, regra) -> int:
+        # Retorna 0 informando que nenhuma restrição matemática extra foi gerada
+        return 0
+
+
 class RuleRegistry:
     """
     Catálogo central dos tipos de regra suportados pelo sistema.
-    Mapeia o nome da regra (do Excel) para a classe Handler que a executa.
+    Mapeia o nome da regra (do Excel) para a classe Handler correspondente.
     """
 
-    _RULES = {
-            # Regras de posicionamento fixo (DESLIGADAS)
-            "DIA": FixedScheduleHandler, 
-            "AULA_INICIAL": FixedScheduleHandler,
-            "AULA_FINAL": FixedScheduleHandler,
+    # 1. REGRAS ATIVAS (Geram restrições rígidas no Solver)
+    _ACTIVE_RULES = {
+        "DIA": FixedScheduleHandler,
+        "AULA_INICIAL": FixedScheduleHandler,
+        "AULA_FINAL": FixedScheduleHandler,
+        "DIAS_DIFERENTES": DifferentDaysHandler,
+        "MAX_CONSECUTIVAS": MaxConsecutiveHandler,
+        "BLOCO_CONTINUO_MINIMO": BlockContinuousHandler,
+    }
 
-            # Regras de distribuição (DESLIGADAS)
-            "DIAS_DIFERENTES": DifferentDaysHandler,
-            "MAX_CONSECUTIVAS": MaxConsecutiveHandler,
-            "PARES": None,
+    # 2. REGRAS ESTRUTURAIS OU DESATIVADAS (Tratadas por Constraints/Objetivos dedicados)
+    _STRUCTURAL_OR_IGNORED_RULES = {
+        "PARES": NoOpHandler,               # Resolvida por PedagogicalPairsConstraint
+        "BLOCO_OTIMO": NoOpHandler,         # Resolvida por AreaCompactnessObjective
+        "BLOCO_ACEITAVEL": NoOpHandler,     # Resolvida por AreaCompactnessObjective
+        "BLOCO_MINIMO": NoOpHandler,        # Coberta por MaxConsecutive/AreaCompactness
+        "COMPLEMENTO": NoOpHandler,         # Desativada/Não utilizada
+        "COMPLEMENTO_POSICAO": NoOpHandler, # Desativada/Não utilizada
+    }
 
-            # Regras de blocos pedagógicos (DESLIGADAS)
-            "BLOCO_OTIMO": None,
-            "BLOCO_ACEITAVEL": None,
-            "BLOCO_MINIMO": None,
-            "BLOCO_CONTINUO_MINIMO": BlockContinuousHandler,
-
-            # Regras de complemento (DESLIGADAS)
-            "COMPLEMENTO": None,
-            "COMPLEMENTO_POSICAO": None,
-        }
+    # União de todos os mapeamentos para validação de suporte
+    _RULES = {**_ACTIVE_RULES, **_STRUCTURAL_OR_IGNORED_RULES}
 
     @classmethod
     def is_supported(cls, tipo: str) -> bool:
@@ -41,12 +61,9 @@ class RuleRegistry:
 
         handler = cls._RULES[tipo]
         
-        # Blindagem: Evita que o Engine tente executar um NoneType e quebre o sistema
-        if handler is None:
-            raise NotImplementedError(
-                f"A regra '{tipo}' existe no catálogo, mas seu Handler (código) "
-                "ainda não foi implementado."
-            )
+        # Log discreto se estivermos usando um NoOpHandler para regras estruturais
+        if handler == NoOpHandler:
+            logging.debug(f"Regra '{tipo}' identificada como estrutural/NoOp. Ignorando aplicação via Engine.")
 
         return handler
 

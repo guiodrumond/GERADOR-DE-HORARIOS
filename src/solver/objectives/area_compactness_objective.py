@@ -1,403 +1,98 @@
 class AreaCompactnessObjective:
+    """
+    Sistema de Premiação focado em SEQUÊNCIAS CONTÍNUAS (Janela Deslizante).
+    Só pontua se as aulas da mesma área estiverem estritamente coladas umas nas outras,
+    suportando corretamente blocos multi-aulas (dobradinhas/quádruplas).
+    """
 
-    TIPOS_AREA = {
-        "BLOCO_MINIMO",
-        "BLOCO_ACEITAVEL",
-        "BLOCO_OTIMO",
-        "BLOCO_CONTINUO_MINIMO",
-    }
-
-    AREA_PESOS = {
-        "CHSA": 10,
-        "CNST": 10,
-        "LEST": 10,
-        "MEST": 6,
-        "FTP": 6,
-        "PROJ": 4,
-    }
-
-    TAMANHO_MINIMO_JANELA = 2
-
-    def __init__(
-        self,
-        model,
-        variables,
-        base,
-        regras,
-        objective_builder,
-    ):
-
+    def __init__(self, model, variables, base, regras, objective_builder):
         self.model = model
         self.variables = variables
         self.base = base
         self.regras = regras
         self.objective_builder = objective_builder
-
-        self.componente_para_area = (
-            self._criar_mapa_componente_area()
-        )
+        
+        self.AREAS_CONHECIMENTO = {
+            "LEST": ["POR", "EDF", "ING", "ART"],
+            "CNST": ["FIS", "QUI", "BIO"],
+            "CHSA": ["GEO", "FIL", "HIS", "SOC"]
+        }
 
     def build(self):
-
-        total = 0
-
-        for area in self._areas_com_objetivo():
-
-            total += self._aplicar_area(
-                area
-            )
-
-        return total
-
-    def _aplicar_area(
-        self,
-        area,
-    ):
-
-        total = 0
-
-        peso_area = self._peso_area(
-            area
-        )
-
-        for turma in self._turmas():
-
-            for dia in self._dias():
-
-                aulas = self._aulas_do_dia(
-                    dia
-                )
-
-                tamanho_maximo = len(
-                    aulas
-                )
-
-                for tamanho_janela in (
-                    4,
-                    5,
-                    6,
-                ):
-
-                    for aula_inicio in aulas:
-
-                        aula_final = (
-                            aula_inicio
-                            + tamanho_janela
-                            - 1
-                        )
-
-                        if aula_final not in aulas:
-                            continue
-
-                        expressao = (
-                            self._expressao_area_na_janela(
-                                turma=turma,
-                                area=area,
-                                dia=dia,
-                                aula_inicio=aula_inicio,
-                                aula_final=aula_final,
-                            )
-                        )
-
-                        if expressao is None:
-                            continue
-
-                        bonus = self.model.NewBoolVar(
-                            self._nome_seguro(
-                                f"bonus_compact_{turma}_{area}_{dia}_{aula_inicio}_{aula_final}"
-                            )
-                        )
-
-                        self.model.Add(
-                            expressao >= tamanho_janela
-                        ).OnlyEnforceIf(
-                            bonus
-                        )
-
-                        self.model.Add(
-                            expressao <= tamanho_janela - 1
-                        ).OnlyEnforceIf(
-                            bonus.Not()
-                        )
-
-                        peso = (
-                            tamanho_janela
-                            * tamanho_janela
-                            * peso_area
-                        )
-
-                        self.objective_builder.add_term(
-                            expression=bonus,
-                            peso=peso,
-                            descricao=(
-                                f"{area} COMPACTACAO "
-                                f"{turma} {dia} "
-                                f"{aula_inicio}-{aula_final}"
-                            ),
-                        )
-
-                        total += 1
-
-        return total
-
-    def _expressao_area_na_janela(
-        self,
-        turma,
-        area,
-        dia,
-        aula_inicio,
-        aula_final,
-    ):
-
-        termos = []
-
-        for bloco in self.base.blocos:
-
-            if bloco.turma != turma:
-                continue
-
-            if not self._bloco_pertence_area(
-                bloco,
-                area,
-            ):
-                continue
-
-            for slot_id, var in self.variables[
-                bloco.id
-            ].items():
-
-                slot_dia, slot_aula = (
-                    self._parse_slot_id(
-                        slot_id
-                    )
-                )
-
-                if slot_dia != dia:
-                    continue
-
-                coeficiente = (
-                    self._coeficiente_area_na_janela(
-                        bloco=bloco,
-                        area=area,
-                        bloco_inicio=slot_aula,
-                        janela_inicio=aula_inicio,
-                        janela_final=aula_final,
-                    )
-                )
-
-                if coeficiente > 0:
-
-                    termos.append(
-                        coeficiente * var
-                    )
-
-        if not termos:
-            return None
-
-        return sum(
-            termos
-        )
-
-    def _coeficiente_area_na_janela(
-        self,
-        bloco,
-        area,
-        bloco_inicio,
-        janela_inicio,
-        janela_final,
-    ):
-
-        if len(bloco.componentes) == 1:
-
-            componente = (
-                bloco.componentes[0]
-            )
-
-            if not self._componente_pertence_area(
-                componente,
-                area,
-            ):
-                return 0
-
-            bloco_final = (
-                bloco_inicio
-                + bloco.tamanho
-                - 1
-            )
-
-            inicio = max(
-                bloco_inicio,
-                janela_inicio,
-            )
-
-            fim = min(
-                bloco_final,
-                janela_final,
-            )
-
-            if inicio > fim:
-                return 0
-
-            return (
-                fim
-                - inicio
-                + 1
-            )
-
-        total = 0
-
-        for offset, componente in enumerate(
-            bloco.componentes
-        ):
-
-            aula = (
-                bloco_inicio
-                + offset
-            )
-
-            if (
-                janela_inicio
-                <= aula
-                <= janela_final
-                and self._componente_pertence_area(
-                    componente,
-                    area,
-                )
-            ):
-
-                total += 1
-
-        return total
-
-    def _areas_com_objetivo(self):
-
-        areas = set()
-
-        for regra in self.regras:
-
-            if regra.tipo in self.TIPOS_AREA:
-
-                areas.add(
-                    regra.alvo
-                )
-
-        return sorted(
-            areas
-        )
-
-    def _peso_area(
-        self,
-        area,
-    ):
-
-        return self.AREA_PESOS.get(
-            area,
-            10,
-        )
-
-    def _bloco_pertence_area(
-        self,
-        bloco,
-        area,
-    ):
-
-        for componente in bloco.componentes:
-
-            if self._componente_pertence_area(
-                componente,
-                area,
-            ):
-
-                return True
-
-        return False
-
-    def _componente_pertence_area(
-        self,
-        componente,
-        area,
-    ):
-
-        area_componente = (
-            self.componente_para_area.get(
-                componente
-            )
-        )
-
-        return (
-            area_componente == area
-        )
-
-    def _criar_mapa_componente_area(self):
-
-        mapa = {}
-
-        for esp in self.base.especialidades:
-
-            mapa[
-                esp.sigla.upper()
-            ] = esp.componente.upper()
-
-        return mapa
-
-    def _turmas(self):
-
-        return sorted(
-            turma.codigo
-            for turma in self.base.turmas
-            if turma.ativa
-        )
-
-    def _dias(self):
-
-        dias = []
-
-        for slot in self.base.slots:
-
-            if slot.dia not in dias:
-
-                dias.append(
-                    slot.dia
-                )
-
-        return dias
-
-    def _aulas_do_dia(
-        self,
-        dia,
-    ):
-
-        return sorted(
-            [
-                slot.aula
-                for slot in self.base.slots
-                if slot.dia == dia
-            ]
-        )
-
-    def _parse_slot_id(
-        self,
-        slot_id,
-    ):
-
-        dia, aula = slot_id.split(
-            "_"
-        )
-
-        return (
-            dia,
-            int(aula),
-        )
-
-    def _nome_seguro(
-        self,
-        texto,
-    ):
-
-        return (
-            texto
-            .replace(" ", "_")
-            .replace("+", "_")
-            .replace("-", "_")
-            .replace("/", "_")
-        )
+        turmas = list({b.turma for b in self.base.blocos})
+        dias = sorted(list({slot.dia for slot in self.base.slots}))
+        
+        for turma in turmas:
+            for dia in dias:
+                aulas_do_dia = sorted([slot.aula for slot in self.base.slots if slot.dia == dia])
+                
+                for componente_area, siglas in self.AREAS_CONHECIMENTO.items():
+                    
+                    # 1. Mapeia se aquele SLOT ESPECÍFICO tem uma aula ativa dessa Área
+                    slot_is_area = {}
+                    for a in aulas_do_dia:
+                        vars_no_slot = []
+                        for b in self.base.blocos:
+                            
+                            # === BLINDAGEM CONTRA O EXCEL ===
+                            # Garante que 'componentes' seja tratado como lista e ignora espaços em branco invisíveis
+                            comps = b.componentes if isinstance(b.componentes, list) else [b.componentes]
+                            
+                            if b.turma == turma and any(str(sigla).strip().upper() in siglas for sigla in comps):
+                                
+                                # === RETROVISOR DE DOBRADINHAS / BLOCOS MULTI-AULA ===
+                                # Lê o tamanho real do bloco (aulas/tamanho/duração)
+                                tamanho = getattr(b, 'aulas', getattr(b, 'tamanho', getattr(b, 'duracao', 1)))
+                                
+                                # Verifica se o bloco começou na aula atual ou em aulas anteriores e se estende até aqui
+                                for i in range(tamanho):
+                                    start_aula = a - i
+                                    if start_aula > 0:
+                                        start_slot_id = f"{dia}_{start_aula}"
+                                        if start_slot_id in self.variables[b.id]:
+                                            vars_no_slot.append(self.variables[b.id][start_slot_id])
+                        
+                        # Criamos a variável booleana de presença da área neste slot específico
+                        b_is_area = self.model.NewBoolVar(f"is_area_{turma}_{componente_area}_{dia}_{a}")
+                        if vars_no_slot:
+                            # Se qualquer variável de início mapeada estiver ativa, o slot pertence à Área
+                            self.model.Add(sum(vars_no_slot) >= 1).OnlyEnforceIf(b_is_area)
+                            self.model.Add(sum(vars_no_slot) == 0).OnlyEnforceIf(b_is_area.Not())
+                        else:
+                            self.model.Add(b_is_area == 0)
+                            
+                        slot_is_area[a] = b_is_area
+
+                    # 2. Janelas Deslizantes para Sequências Contínuas
+                    
+                    # Janelas de tamanho 4 (Mínimo desejável)
+                    for i in range(len(aulas_do_dia) - 3):
+                        janela = [slot_is_area[aulas_do_dia[j]] for j in range(i, i + 4)]
+                        b_win4 = self.model.NewBoolVar(f"win4_{turma}_{componente_area}_{dia}_{i}")
+                        self.model.Add(sum(janela) == 4).OnlyEnforceIf(b_win4)
+                        self.model.Add(sum(janela) < 4).OnlyEnforceIf(b_win4.Not())
+                        self._adicionar_premio(b_win4, 150, f"SEQ CONTINUA 4 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+3]}")
+
+                    # Janelas de tamanho 5
+                    for i in range(len(aulas_do_dia) - 4):
+                        janela = [slot_is_area[aulas_do_dia[j]] for j in range(i, i + 5)]
+                        b_win5 = self.model.NewBoolVar(f"win5_{turma}_{componente_area}_{dia}_{i}")
+                        self.model.Add(sum(janela) == 5).OnlyEnforceIf(b_win5)
+                        self.model.Add(sum(janela) < 5).OnlyEnforceIf(b_win5.Not())
+                        self._adicionar_premio(b_win5, 300, f"SEQ CONTINUA 5 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+4]}")
+
+                    # Janelas de tamanho 6
+                    for i in range(len(aulas_do_dia) - 5):
+                        janela = [slot_is_area[aulas_do_dia[j]] for j in range(i, i + 6)]
+                        b_win6 = self.model.NewBoolVar(f"win6_{turma}_{componente_area}_{dia}_{i}")
+                        self.model.Add(sum(janela) == 6).OnlyEnforceIf(b_win6)
+                        self.model.Add(sum(janela) < 6).OnlyEnforceIf(b_win6.Not())
+                        self._adicionar_premio(b_win6, 500, f"SEQ CONTINUA 6 [{componente_area}] {turma} {dia} Aulas {aulas_do_dia[i]}-{aulas_do_dia[i+5]}")
+
+    def _adicionar_premio(self, variavel_booleana, pontos, descricao):
+        if hasattr(self.objective_builder, 'add_term'):
+            self.objective_builder.add_term(variavel_booleana, pontos, descricao)
+        elif hasattr(self.objective_builder, 'adicionar_termo'):
+            self.objective_builder.adicionar_termo(variavel_booleana, pontos, descricao)
+        elif hasattr(self.objective_builder, 'termos'):
+            self.objective_builder.termos.append(variavel_booleana * pontos)
