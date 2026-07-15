@@ -1,197 +1,113 @@
 class MaxConsecutiveHandler:
+    """
+    MAX_CONSECUTIVAS
+    Exemplo: MAT_MAX_CONSECUTIVAS = 2
+    Garante que uma disciplina ou área não ultrapasse o limite de aulas 
+    seguidas no mesmo dia. Usa a lógica de "janela deslizante" (tamanho = max + 1).
+    """
 
-    def __init__(
-        self,
-        model,
-        variables,
-        base,
-        regras_do_alvo,
-    ):
-
+    def __init__(self, model, variables, base, regras_do_alvo):
         self.model = model
         self.variables = variables
         self.base = base
         self.regras_do_alvo = regras_do_alvo
+        
+        self.componente_para_area = self._criar_mapa_componente_area()
+        self.aulas_por_dia = self._mapear_aulas_por_dia()
 
     def apply(self, regra):
+        try:
+            max_consecutivas = int(regra.valor)
+        except ValueError:
+            return 0  # Ignora se o valor no Excel não for um número válido
 
-        max_consecutivas = int(
-            regra.valor
-        )
-
-        tamanho_janela = (
-            max_consecutivas
-            + 1
-        )
-
+        tamanho_janela = max_consecutivas + 1
         quantidade = 0
 
         for turma in self._turmas():
-
-            blocos = self._blocos_do_alvo(
-                turma=turma,
-                alvo=regra.alvo,
-            )
-
+            blocos = self._blocos_do_alvo(turma, regra.alvo)
+            
             if not blocos:
                 continue
 
-            for dia in self._dias():
-
-                aulas_do_dia = self._aulas_do_dia(
-                    dia
-                )
-
+            for dia, aulas_do_dia in self.aulas_por_dia.items():
                 if len(aulas_do_dia) < tamanho_janela:
                     continue
 
-                for inicio in range(
-                    0,
-                    len(aulas_do_dia)
-                    - tamanho_janela
-                    + 1
-                ):
-
-                    janela = aulas_do_dia[
-                        inicio: inicio + tamanho_janela
-                    ]
-
+                # Desliza uma janela de tamanho (max + 1) pelo dia
+                for inicio in range(0, len(aulas_do_dia) - tamanho_janela + 1):
+                    janela = aulas_do_dia[inicio : inicio + tamanho_janela]
                     termos = []
 
                     for bloco in blocos:
-
-                        for slot_inicio_id, variavel in self.variables[
-                            bloco.id
-                        ].items():
-
-                            coeficiente = (
-                                self._quantidade_ocupada_na_janela(
-                                    bloco=bloco,
-                                    slot_inicio_id=slot_inicio_id,
-                                    dia=dia,
-                                    janela=janela,
-                                )
+                        for slot_inicio_id, variavel in self.variables[bloco.id].items():
+                            coeficiente = self._quantidade_ocupada_na_janela(
+                                bloco, slot_inicio_id, dia, janela
                             )
-
                             if coeficiente > 0:
+                                termos.append(coeficiente * variavel)
 
-                                termos.append(
-                                    coeficiente * variavel
-                                )
-
+                    # Se a disciplina aparece nesta janela, a soma dos blocos nela 
+                    # não pode ultrapassar o máximo permitido
                     if termos:
-
-                        self.model.Add(
-                            sum(termos)
-                            <= max_consecutivas
-                        )
-
+                        self.model.Add(sum(termos) <= max_consecutivas)
                         quantidade += 1
 
         return quantidade
 
+    # ==================================================
+    # BLOCOS E MAPEAMENTOS
+    # ==================================================
+
     def _turmas(self):
+        return sorted({bloco.turma for bloco in self.base.blocos})
 
-        return sorted(
-            {
-                bloco.turma
-                for bloco in self.base.blocos
-            }
-        )
+    def _mapear_aulas_por_dia(self):
+        mapa = {}
+        for slot in self.base.slots:
+            mapa.setdefault(slot.dia, []).append(slot.aula)
+        for dia in mapa:
+            mapa[dia].sort()
+        return mapa
 
-    def _dias(self):
-
-        return sorted(
-            {
-                slot.dia
-                for slot in self.base.slots
-            }
-        )
-
-    def _aulas_do_dia(
-        self,
-        dia: str,
-    ):
-
-        aulas = [
-            slot.aula
-            for slot in self.base.slots
-            if slot.dia == dia
-        ]
-
-        return sorted(
-            aulas
-        )
-
-    def _blocos_do_alvo(
-        self,
-        turma: str,
-        alvo: str,
-    ):
-
+    def _blocos_do_alvo(self, turma: str, alvo: str):
         blocos = []
-
         for bloco in self.base.blocos:
-
-            if bloco.turma != turma:
-                continue
-
-            if alvo in bloco.componentes:
-
-                blocos.append(
-                    bloco
-                )
-
+            if bloco.turma == turma and self._bloco_pertence_ao_alvo(bloco, alvo):
+                blocos.append(bloco)
         return blocos
 
-    def _parse_slot_id(
-        self,
-        slot_id: str,
-    ):
+    def _bloco_pertence_ao_alvo(self, bloco, alvo):
+        for componente in bloco.componentes:
+            if componente == alvo:
+                return True
+            if self.componente_para_area.get(componente) == alvo:
+                return True
+        return False
 
+    def _criar_mapa_componente_area(self):
+        return {esp.sigla.upper(): esp.componente.upper() for esp in self.base.especialidades}
+
+    # ==================================================
+    # MATEMÁTICA DA JANELA DESLIZANTE
+    # ==================================================
+
+    def _parse_slot_id(self, slot_id: str):
         partes = slot_id.split("_")
+        return partes[0], int(partes[1])
 
-        dia = partes[0]
-
-        aula = int(
-            partes[1]
-        )
-
-        return dia, aula
-
-    def _quantidade_ocupada_na_janela(
-        self,
-        bloco,
-        slot_inicio_id: str,
-        dia: str,
-        janela: list[int],
-    ):
-
-        dia_inicio, aula_inicio = (
-            self._parse_slot_id(
-                slot_inicio_id
-            )
-        )
+    def _quantidade_ocupada_na_janela(self, bloco, slot_inicio_id: str, dia: str, janela: list[int]):
+        dia_inicio, aula_inicio = self._parse_slot_id(slot_inicio_id)
 
         if dia_inicio != dia:
             return 0
 
-        aula_final = (
-            aula_inicio
-            + bloco.tamanho
-            - 1
-        )
-
+        aula_final = aula_inicio + bloco.tamanho - 1
         ocupadas = 0
 
+        # Conta quantos slots do bloco caem exatamente dentro dos limites desta janela
         for aula in janela:
-
-            if (
-                aula_inicio
-                <= aula
-                <= aula_final
-            ):
-
+            if aula_inicio <= aula <= aula_final:
                 ocupadas += 1
 
         return ocupadas

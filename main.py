@@ -4,6 +4,8 @@ from pathlib import Path
 from ortools.sat.python import cp_model
 
 from src.data.loader import ExcelLoader
+from src.data.validators import BaseDadosValidator
+from src.data.analyzer import PedagogicalPairsAnalyzer
 from src.builder.pedagogical_blocks import PedagogicalBlockBuilder
 from src.solver.variables import DecisionVariableBuilder
 from src.solver.rules.parser import RuleParser
@@ -29,6 +31,7 @@ from src.solver.planning.collective_planning_objective import CollectivePlanning
 from src.solver.planning.planning_result_builder import PlanningResultBuilder
 from src.solver.objectives.area_contiguity_objective import AreaContiguityObjective
 from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairsConstraint
+from src.scheduling.pedagogical_reporter import PedagogicalPairsReporter
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -36,21 +39,21 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 def main(input_excel: str, target_turma: str):
     logging.info("===== INICIANDO GERADOR DE HORÁRIOS =====")
 
-    # ====================================================
-    # CARREGAMENTO E BLOCOS
-    # ====================================================
+
     base = ExcelLoader(input_excel).load()
+    BaseDadosValidator(base).validate()
+    
+    analyzer = PedagogicalPairsAnalyzer(base)
+    analise_atribuicao = analyzer.analisar()
+    analyzer.imprimir_avisos_pre_solver(analise_atribuicao)
+
     base.blocos = PedagogicalBlockBuilder(base).build()
 
-    # ====================================================
-    # REGRAS E VARIÁVEIS
-    # ====================================================
+
     regras = RuleParser().parse(base.restricoes)
     model, variables = DecisionVariableBuilder(base).build()
 
-    # ====================================================
-    # PLANEJAMENTO COLETIVO (Variáveis e Disponibilidade)
-    # ====================================================
+
     planning_windows = PlanningWindowBuilder(base=base, tamanho_janela=2).build()
     planning_variables = PlanningVariables(model=model, planning_windows=planning_windows, base=base).build()
     
@@ -60,9 +63,7 @@ def main(input_excel: str, target_turma: str):
 
     logging.info(f"Janelas de planejamento criadas: {len(planning_windows)}")
 
-    # ====================================================
-    # ENGINE E CONSTRAINTS (Apenas a Física Básica LIGADA)
-    # ====================================================
+
     rule_engine = RuleEngine(model=model, variables=variables, base=base, regras=regras)
     rule_engine.build()
     
@@ -70,9 +71,7 @@ def main(input_excel: str, target_turma: str):
     TurmaConflictConstraint(model, variables, base).build()
     ProfessorConflictConstraint(model, variables, base).build()
 
-    # ====================================================
-    # OBJETIVOS (Desligados para o Teste de Isolamento)
-    # ====================================================
+
     objective_builder = ObjectiveBuilder(
         model=model, variables=variables, base=base, regras=regras
     )
@@ -101,20 +100,18 @@ def main(input_excel: str, target_turma: str):
     ).build()
 
 
-    PedagogicalPairsConstraint(
-        model=model,
-        variables=variables,
-        base=base,
-        objective_builder=objective_builder,
-    ).build()
+    # PedagogicalPairsConstraint(
+    #     model=model,
+    #     variables=variables,
+    #     base=base,
+    #     objective_builder=objective_builder,
+    # ).build()
 
-    # Constrói a função objetivo final no modelo
+
     objective_builder.build()
     objective_builder.imprimir_resumo()
 
-    # ====================================================
-    # SOLVER
-    # ====================================================
+
     logging.info("Executando Solver...")
     scheduler = Scheduler(model)
     solver, status = scheduler.solve()
@@ -125,9 +122,7 @@ def main(input_excel: str, target_turma: str):
 
     logging.info("Solução encontrada. Validando e extraindo resultados...")
 
-    # ====================================================
-    # RESULTADOS DO PLANEJAMENTO
-    # ====================================================
+
     planning_result = PlanningResultBuilder(
         solver=solver,
         planning_variables=planning_variables,
@@ -135,14 +130,18 @@ def main(input_excel: str, target_turma: str):
         teacher_availability=teacher_availability,
     ).build()
 
-    PlanningResultBuilder.print_report(planning_result)  # Desligado para não sujar o log do teste
-    
-    # ====================================================
-    # CONSTRUÇÃO DA GRADE E EXPORTAÇÃO
-    # ====================================================
+    PlanningResultBuilder.print_report(planning_result)  
+
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
     grid = GridBuilder(schedule).build()
     
+    PedagogicalPairsReporter(
+        solver=solver, 
+        variables=variables, 
+        base=base,
+        analise_previa=analise_atribuicao
+    ).print_report()
+        
     print("\n===== AMOSTRA DE HORÁRIO: 1ADM01 =====")
     GridPrinter.print_turma(grid, "1ADM01")
     
