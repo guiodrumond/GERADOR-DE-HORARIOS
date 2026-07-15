@@ -1,69 +1,111 @@
-import logging
+from src.data.analyzer import PedagogicalPairsAnalyzer
 
 class PedagogicalPairsConstraint:
-    def __init__(self, model, variables, base, objective_builder):
+    """
+    Garante o cumprimento OBRIGATÓRIO (Hard Constraint) dos Pares Pedagógicos.
+    """
+
+    def __init__(self, model, variables, base, objective_builder=None):
         self.model = model
         self.variables = variables
         self.base = base
-        self.objective_builder = objective_builder
-        self.pares_config = base.pares_pedagogicos
+        self.analyzer = PedagogicalPairsAnalyzer(base)
 
     def build(self):
-        # 1. Agrupar turmas espelháveis (mesmo curso e padrao_ftp)
-        grupos_espelhamento = self._agrupar_turmas_espelhadas()
-        
-        # 2. Aplicar o X apenas para turmas que realmente são espelho
-        for grupo in grupos_espelhamento:
-            if len(grupo) < 2: continue
+        analise = self.analyzer.analisar()
+
+        # Cache para buscas rápidas
+        self.active_t_c_s = {}
+        for bloco in self.base.blocos:
+            if len(bloco.componentes) == 1:
+                comp = bloco.componentes[0].upper()
+                turma = bloco.turma
+                for slot_id, var in self.variables[bloco.id].items():
+                    key = (turma, comp, slot_id)
+                    self.active_t_c_s.setdefault(key, []).append(var)
+
+        for par in self.base.pares_pedagogicos:
+            c1 = par.especialidade_1.upper()
+            c2 = par.especialidade_2.upper()
+            chave_par = f"{c1} & {c2}"
             
-            # Pega as duas primeiras turmas do grupo (ex: 1ADM01 e 1ADM02)
-            t1, t2 = grupo[0], grupo[1]
+            dados = analise.get(chave_par)
+            if not dados:
+                continue
+
+            # 1. Adjacência Obrigatória para TODAS as turmas
+            todas_turmas = set()
+            for t1, t2, _, _ in dados["perfeitos"]:
+                todas_turmas.add(t1)
+                todas_turmas.add(t2)
+            for t, _, _ in dados["assimetricos"]:
+                todas_turmas.add(t)
+
+            for turma in todas_turmas:
+                self._forcar_adjacencia_restrita(turma, c1, c2)
+
+            # 2. Espelhamento "X" para pares perfeitos
+            for t1, t2, _, _ in dados["perfeitos"]:
+                self._forcar_x_simultaneo(t1, t2, c1, c2)
+
+    def _get_var(self, turma, comp, slot_id):
+        vars_list = self.active_t_c_s.get((turma, comp, slot_id), [])
+        return sum(vars_list) if vars_list else 0
+
+    def _forcar_adjacencia_restrita(self, turma, c1, c2):
+        dias = sorted(list({slot.dia for slot in self.base.slots}))
+
+        for dia in dias:
+            aulas_do_dia = sorted([slot.aula for slot in self.base.slots if slot.dia == dia])
             
-            for par in self.pares_config:
-                self._forcar_x_sincrono(t1.codigo, t2.codigo, par.especialidade_1, par.especialidade_2)
-        return 0
+            vars_dia_c1 = [self._get_var(turma, c1, f"{dia}_{a}") for a in aulas_do_dia]
+            vars_dia_c2 = [self._get_var(turma, c2, f"{dia}_{a}") for a in aulas_do_dia]
+            
+            # Mesmo número de aulas no dia
+            self.model.Add(sum(vars_dia_c1) == sum(vars_dia_c2))
 
-    def _agrupar_turmas_espelhadas(self):
-        grupos = {}
-        for turma in self.base.turmas:
-            # Chave baseada no curso e padrão, para saber quem deve ser espelhado
-            chave = f"{turma.curso}_{turma.padrao_ftp}"
-            if chave not in grupos: grupos[chave] = []
-            grupos[chave].append(turma)
-        return list(grupos.values())
+            # Se eu existo, um dos meus vizinhos TEM que ser meu par
+            for idx, a in enumerate(aulas_do_dia):
+                slot_id = f"{dia}_{a}"
+                v_c1 = self._get_var(turma, c1, slot_id)
+                v_c2 = self._get_var(turma, c2, slot_id)
+                
+                vizinhos_c1, vizinhos_c2 = [], []
+                
+                if idx > 0:
+                    a_ant = aulas_do_dia[idx - 1]
+                    vizinhos_c1.append(self._get_var(turma, c1, f"{dia}_{a_ant}"))
+                    vizinhos_c2.append(self._get_var(turma, c2, f"{dia}_{a_ant}"))
+                if idx < len(aulas_do_dia) - 1:
+                    a_prox = aulas_do_dia[idx + 1]
+                    vizinhos_c1.append(self._get_var(turma, c1, f"{dia}_{a_prox}"))
+                    vizinhos_c2.append(self._get_var(turma, c2, f"{dia}_{a_prox}"))
 
-    def _forcar_x_sincrono(self, t1_cod, t2_cod, siglaA, siglaB):
-        # Localiza os blocos
-        bA_t1 = self._get_bloco(t1_cod, siglaA)
-        bB_t1 = self._get_bloco(t1_cod, siglaB)
-        bA_t2 = self._get_bloco(t2_cod, siglaA)
-        bB_t2 = self._get_bloco(t2_cod, siglaB)
+                if not isinstance(v_c1, int):
+                    b_c1 = self.model.NewBoolVar(f'is_c1_{turma}_{slot_id}')
+                    self.model.Add(v_c1 > 0).OnlyEnforceIf(b_c1)
+                    self.model.Add(v_c1 == 0).OnlyEnforceIf(b_c1.Not())
+                    if vizinhos_c2:
+                        self.model.Add(sum(vizinhos_c2) >= 1).OnlyEnforceIf(b_c1)
+                    else:
+                        self.model.Add(v_c1 == 0)
+                        
+                if not isinstance(v_c2, int):
+                    b_c2 = self.model.NewBoolVar(f'is_c2_{turma}_{slot_id}')
+                    self.model.Add(v_c2 > 0).OnlyEnforceIf(b_c2)
+                    self.model.Add(v_c2 == 0).OnlyEnforceIf(b_c2.Not())
+                    if vizinhos_c1:
+                        self.model.Add(sum(vizinhos_c1) >= 1).OnlyEnforceIf(b_c2)
+                    else:
+                        self.model.Add(v_c2 == 0)
 
-        if not (bA_t1 and bB_t1 and bA_t2 and bB_t2): return
-
-        # Força a alternância cruzada: 
-        # T1 tem A e T2 tem B -> T1 tem B e T2 tem A (no slot seguinte)
+    def _forcar_x_simultaneo(self, t1, t2, c1, c2):
         for slot in self.base.slots:
-            if slot.aula % 2 == 0: continue
-            
-            t_id = f"{slot.dia}_{slot.aula}"
-            next_id = f"{slot.dia}_{slot.aula + 1}"
-            
-            vA1 = self.variables[bA_t1.id].get(t_id)
-            vB2 = self.variables[bB_t2.id].get(t_id)
-            vB1_next = self.variables[bB_t1.id].get(next_id)
-            vA2_next = self.variables[bA_t2.id].get(next_id)
+            slot_id = f"{slot.dia}_{slot.aula}"
+            v_t1_c1 = self._get_var(t1, c1, slot_id)
+            v_t1_c2 = self._get_var(t1, c2, slot_id)
+            v_t2_c1 = self._get_var(t2, c1, slot_id)
+            v_t2_c2 = self._get_var(t2, c2, slot_id)
 
-            if all(v is not None for v in [vA1, vB2, vB1_next, vA2_next]):
-                match = self.model.NewBoolVar(f"X_{t1_cod}_{t2_cod}_{t_id}")
-                # A lógica do X: Se começar invertido, tem que terminar invertido
-                self.model.AddBoolAnd([vA1, vB2]).OnlyEnforceIf(match)
-                self.model.Add(vB1_next == 1).OnlyEnforceIf(match)
-                self.model.Add(vA2_next == 1).OnlyEnforceIf(match)
-                self.objective_builder.add_term(match, 500000, "X_PEDAGOGICO")
-
-    def _get_bloco(self, turma_cod, sigla):
-        for b in self.base.blocos:
-            if b.turma == turma_cod and any(sigla.upper() in c.upper() for c in b.componentes):
-                return b
-        return None
+            self.model.Add(v_t1_c1 == v_t2_c2)
+            self.model.Add(v_t1_c2 == v_t2_c1)

@@ -13,23 +13,16 @@ from src.solver.rules.engine import RuleEngine
 from src.solver.constraints.block_assignment_constraint import BlockAssignmentConstraint
 from src.solver.constraints.class_conflict_constraint import TurmaConflictConstraint
 from src.solver.constraints.professor_conflict_constraint import ProfessorConflictConstraint
-from src.solver.validators.professor_validator import ProfessorValidator
 from src.solver.scheduler import Scheduler
-from src.solver.stats import SolverStats
 from src.scheduling.schedule_builder import ScheduleBuilder
 from src.scheduling.grid_builder import GridBuilder
 from src.scheduling.grid_printer import GridPrinter
 from src.export.excel_exporter import ExcelExporter
 from src.solver.objectives.objective_builder import ObjectiveBuilder
-from src.solver.objectives.area_grouping_objective import AreaGroupingObjective
-from src.solver.validators.area_continuity_validator import AreaContinuityValidator
-from src.solver.objectives.area_compactness_objective import AreaCompactnessObjective
 from src.solver.planning.planning_window_builder import PlanningWindowBuilder
 from src.solver.planning.planning_variables import PlanningVariables
 from src.solver.planning.teacher_availability_builder import TeacherAvailabilityBuilder
-from src.solver.planning.collective_planning_objective import CollectivePlanningObjective
 from src.solver.planning.planning_result_builder import PlanningResultBuilder
-from src.solver.objectives.area_contiguity_objective import AreaContiguityObjective
 from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairsConstraint
 from src.scheduling.pedagogical_reporter import PedagogicalPairsReporter
 
@@ -38,7 +31,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 def main(input_excel: str, target_turma: str):
     logging.info("===== INICIANDO GERADOR DE HORÁRIOS =====")
-
 
     base = ExcelLoader(input_excel).load()
     BaseDadosValidator(base).validate()
@@ -49,10 +41,8 @@ def main(input_excel: str, target_turma: str):
 
     base.blocos = PedagogicalBlockBuilder(base).build()
 
-
     regras = RuleParser().parse(base.restricoes)
     model, variables = DecisionVariableBuilder(base).build()
-
 
     planning_windows = PlanningWindowBuilder(base=base, tamanho_janela=2).build()
     planning_variables = PlanningVariables(model=model, planning_windows=planning_windows, base=base).build()
@@ -63,54 +53,26 @@ def main(input_excel: str, target_turma: str):
 
     logging.info(f"Janelas de planejamento criadas: {len(planning_windows)}")
 
-
+    # O MOTOR DE REGRAS VOLTA (Cuidará de DIAS_DIFERENTES, etc.)
     rule_engine = RuleEngine(model=model, variables=variables, base=base, regras=regras)
     rule_engine.build()
     
+    # FÍSICA ESTRUTURAL
     BlockAssignmentConstraint(model, variables).build()
     TurmaConflictConstraint(model, variables, base).build()
     ProfessorConflictConstraint(model, variables, base).build()
 
+    # A NOSSA LEI INEGOCIÁVEL DOS PARES
+    PedagogicalPairsConstraint(
+        model=model,
+        variables=variables,
+        base=base,
+    ).build()
 
     objective_builder = ObjectiveBuilder(
         model=model, variables=variables, base=base, regras=regras
     )
-
-    AreaCompactnessObjective(
-        model=model,
-        variables=variables,
-        base=base,
-        regras=regras,
-        objective_builder=objective_builder,
-    ).build()
-
-    AreaContiguityObjective(
-        model=model,
-        variables=variables,
-        base=base,
-        objective_builder=objective_builder,
-    ).build()
-
-    CollectivePlanningObjective(
-        model=model,
-        planning_variables=planning_variables,
-        teacher_availability=teacher_availability,
-        objective_builder=objective_builder,
-        base=base, 
-    ).build()
-
-
-    # PedagogicalPairsConstraint(
-    #     model=model,
-    #     variables=variables,
-    #     base=base,
-    #     objective_builder=objective_builder,
-    # ).build()
-
-
     objective_builder.build()
-    objective_builder.imprimir_resumo()
-
 
     logging.info("Executando Solver...")
     scheduler = Scheduler(model)
@@ -122,15 +84,12 @@ def main(input_excel: str, target_turma: str):
 
     logging.info("Solução encontrada. Validando e extraindo resultados...")
 
-
     planning_result = PlanningResultBuilder(
         solver=solver,
         planning_variables=planning_variables,
         planning_windows=planning_windows,
         teacher_availability=teacher_availability,
     ).build()
-
-    PlanningResultBuilder.print_report(planning_result)  
 
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
     grid = GridBuilder(schedule).build()
