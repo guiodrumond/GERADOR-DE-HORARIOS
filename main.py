@@ -63,7 +63,7 @@ def main(input_excel: str, target_turma: str):
     BlockAssignmentConstraint(model, variables).build()
     TurmaConflictConstraint(model, variables, base).build()
     ProfessorConflictConstraint(model, variables, base).build()
-    TeacherAvailabilityConstraint(model, variables, base).build() # AGORA ATIVA!
+    TeacherAvailabilityConstraint(model, variables, base).build()
     PedagogicalPairsConstraint(model=model, variables=variables, base=base).build()
 
     # 4. Objetivos (Soft)

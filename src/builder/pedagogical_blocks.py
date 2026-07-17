@@ -24,11 +24,12 @@ class PedagogicalBlockBuilder:
         valor = self._valor_padrao("MEST", "DUPLAS")
         return int(valor) if valor is not None else 2
 
-    def _componentes_em_pares(self):
+    def _componentes_em_pares(self, ano: int):
         componentes = set()
         for par in self.base.pares_pedagogicos:
-            componentes.add(par.especialidade_1)
-            componentes.add(par.especialidade_2)
+            if par.ano == ano:
+                componentes.add(par.especialidade_1)
+                componentes.add(par.especialidade_2)
         return componentes
 
     # =====================================================
@@ -42,9 +43,15 @@ class PedagogicalBlockBuilder:
 
     def _build_turma(self, turma: str):
         blocos = []
-        pares = self._componentes_em_pares()
+        turma_obj = self._buscar_turma(turma)
+        ano_turma = turma_obj.ano
+        
+        pares = self._componentes_em_pares(ano_turma)
 
-        for esp in self.base.especialidades:
+        # O SEGREDO DO SUCESSO: Filtramos as especialidades apenas para o ano da turma atual!
+        especialidades_do_ano = [esp for esp in self.base.especialidades if esp.ano == ano_turma]
+
+        for esp in especialidades_do_ano:
             sigla = esp.sigla.upper()
 
             if sigla in pares:
@@ -52,12 +59,21 @@ class PedagogicalBlockBuilder:
 
             if sigla == "POR":
                 blocos.extend(self._criar_portugues(turma))
-            elif sigla == "PROJ":
+                
+            # Desdobramento de PROJ em PA e PV
+            elif sigla == "PA":
                 blocos.append(
                     BlocoPedagogico(
-                        id=f"{turma}_PROJ", turma=turma, componentes=["PROJ"], tamanho=4, fixo=True
+                        id=f"{turma}_PA", turma=turma, componentes=["PA"], tamanho=esp.aulas, fixo=True
                     )
                 )
+            elif sigla == "PV":
+                blocos.append(
+                    BlocoPedagogico(
+                        id=f"{turma}_PV", turma=turma, componentes=["PV"], tamanho=esp.aulas, fixo=True
+                    )
+                )
+                
             elif sigla == "MAT":
                 blocos.extend(self._criar_matematica(turma))
             elif sigla == "FTP":
@@ -65,7 +81,7 @@ class PedagogicalBlockBuilder:
             else:
                 blocos.extend(self._criar_bloco_generico(turma, sigla, esp.aulas))
 
-        blocos.extend(self._criar_pares_pedagogicos(turma))
+        blocos.extend(self._criar_pares_pedagogicos(turma_obj))
         return blocos
 
     # =====================================================
@@ -98,14 +114,19 @@ class PedagogicalBlockBuilder:
             ]
         raise ValueError(f"Padrao_FTP inválido para turma {turma}: {turma_obj.padrao_ftp}")
 
-    def _criar_pares_pedagogicos(self, turma: str):
+    def _criar_pares_pedagogicos(self, turma_obj):
         blocos = []
-        for par in self.base.pares_pedagogicos:
-            # Recupera a carga horária real (aulas) para não perder aulas na semana
-            aulas_1 = next((e.aulas for e in self.base.especialidades if e.sigla.upper() == par.especialidade_1.upper()), 1)
-            aulas_2 = next((e.aulas for e in self.base.especialidades if e.sigla.upper() == par.especialidade_2.upper()), 1)
+        turma = turma_obj.codigo
+        ano_turma = turma_obj.ano
+        
+        # Filtramos os pares do ano correspondente
+        pares_do_ano = [par for par in self.base.pares_pedagogicos if par.ano == ano_turma]
+        especialidades_do_ano = [esp for esp in self.base.especialidades if esp.ano == ano_turma]
+        
+        for par in pares_do_ano:
+            aulas_1 = next((e.aulas for e in especialidades_do_ano if e.sigla.upper() == par.especialidade_1.upper()), 1)
+            aulas_2 = next((e.aulas for e in especialidades_do_ano if e.sigla.upper() == par.especialidade_2.upper()), 1)
 
-            # Cria a quantidade correta de blocos de 1h com IDs únicos
             for i in range(aulas_1):
                 blocos.append(
                     BlocoPedagogico(
@@ -127,7 +148,6 @@ class PedagogicalBlockBuilder:
         return blocos
 
     def _criar_bloco_generico(self, turma: str, sigla: str, aulas: int):
-        # Distribuidor inteligente: divide a carga horária automaticamente sem dar erro
         blocos = []
         aulas_restantes = aulas
         contador = 1

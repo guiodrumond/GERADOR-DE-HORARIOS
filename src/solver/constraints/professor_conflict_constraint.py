@@ -101,22 +101,17 @@ class ProfessorConflictConstraint:
             return mapa
 
     def _professores_usados(self):
+            professores = set()
 
-        professores = set()
+            for bloco in self.base.blocos:
+                for professor in self._professores_do_bloco(bloco):
+                    
+                    # BLINDAGEM: Ignora campos vazios, NaN do Pandas ou professores fictícios
+                    prof_str = str(professor).strip().upper()
+                    if prof_str not in ["NONE", "NAN", "", "A DEFINIR"]:
+                        professores.add(professor)
 
-        for bloco in self.base.blocos:
-
-            for professor in self._professores_do_bloco(
-                bloco
-            ):
-
-                professores.add(
-                    professor
-                )
-
-        return sorted(
-            professores
-        )
+            return sorted(professores)
 
     def _professores_do_bloco(
         self,

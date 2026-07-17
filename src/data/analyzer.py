@@ -31,6 +31,9 @@ class PedagogicalPairsAnalyzer:
             for turma_obj in self.base.turmas:
                 if not turma_obj.ativa:
                     continue
+
+                if turma_obj.ano != par.ano:
+                    continue
                 
                 t_name = turma_obj.codigo
                 prof_1 = atribuicoes_map.get((t_name, c1))

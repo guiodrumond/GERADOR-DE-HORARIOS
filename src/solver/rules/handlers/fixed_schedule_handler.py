@@ -2,6 +2,7 @@ class FixedScheduleHandler:
     """
     Trata as regras: DIA, AULA_INICIAL, AULA_FINAL.
     Fixa os blocos de uma disciplina (ou área) num dia e horário exatos.
+    Suporta formato antigo (ALVO_TIPO) e novo formato por ano (ALVO_ANO_TIPO).
     """
 
     def __init__(self, model, variables, base, regras_do_alvo):
@@ -11,10 +12,9 @@ class FixedScheduleHandler:
         self.regras_do_alvo = regras_do_alvo
         
         self.componente_para_area = self._criar_mapa_componente_area()
+        self.mapa_turma_ano = self._criar_mapa_turma_ano()
 
     def apply(self, regra):
-        # Para não aplicar a mesma lógica 3 vezes (para DIA, INICIAL e FINAL), 
-        # elegemos a regra 'DIA' como o gatilho para agir.
         if regra.tipo != "DIA":
             return 0
 
@@ -29,14 +29,27 @@ class FixedScheduleHandler:
         aula_final = int(aula_final)
         tamanho_esperado = aula_final - aula_inicial + 1
         quantidade = 0
+        
+        # O pulo do gato: A regra alvo agora pode conter o ano (Ex: PA_1, PV_2)
+        alvo_real = regra.alvo
+        ano_alvo = None
+        
+        # Tenta extrair o ano da regra se ela for do tipo PA_1
+        partes = regra.alvo.split('_')
+        if len(partes) == 2 and partes[1].isdigit():
+            alvo_real = partes[0]
+            ano_alvo = int(partes[1])
 
         for turma in self._turmas():
-            blocos = self._blocos_do_alvo(turma, regra.alvo)
+            # Se a regra especificar um ano, pula turmas de outros anos
+            if ano_alvo is not None and self.mapa_turma_ano.get(turma) != ano_alvo:
+                continue
+                
+            blocos = self._blocos_do_alvo(turma, alvo_real)
             
             if not blocos:
                 continue
 
-            # Soma a duração de todos os blocos desta disciplina
             total_aulas_blocos = sum(bloco.tamanho for bloco in blocos)
 
             if total_aulas_blocos != tamanho_esperado:
@@ -46,15 +59,12 @@ class FixedScheduleHandler:
                     f"mas a escola possui {total_aulas_blocos} aulas configuradas para esta turma."
                 )
 
-            # Alocação Sequencial Inteligente (Suporta blocos fragmentados)
             aula_atual = aula_inicial
             
             for bloco in blocos:
                 slot_id = f"{dia}_{aula_atual}"
 
-                # Valida se o slot existe no dicionário de variáveis do bloco
                 if slot_id in self.variables[bloco.id]:
-                    # Fixa (chumba) o bloco neste slot exato
                     self.model.Add(self.variables[bloco.id][slot_id] == 1)
                     quantidade += 1
                 else:
@@ -63,7 +73,6 @@ class FixedScheduleHandler:
                         "Verifique se o limite de aulas diárias não foi ultrapassado."
                     )
 
-                # Avança o ponteiro para o próximo horário disponível na sequência
                 aula_atual += bloco.tamanho
 
         return quantidade
@@ -80,6 +89,9 @@ class FixedScheduleHandler:
 
     def _turmas(self):
         return sorted({bloco.turma for bloco in self.base.blocos})
+        
+    def _criar_mapa_turma_ano(self):
+        return {turma.codigo: turma.ano for turma in self.base.turmas}
 
     def _blocos_do_alvo(self, turma, alvo):
         resultado = []

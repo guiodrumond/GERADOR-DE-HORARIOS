@@ -25,7 +25,7 @@ class ExcelLoader:
                 'CURSOS': pd.read_excel(xl, sheet_name='CURSOS'),
                 'TURMAS': pd.read_excel(xl, sheet_name='TURMAS'),
                 'PROFESSORES': pd.read_excel(xl, sheet_name='PROFESSORES'),
-                'ESPEC': pd.read_excel(xl, sheet_name='ESPECIALIDADES_1ANO'),
+                'ESPEC': pd.read_excel(xl, sheet_name='ESPECIALIDADES'), # <-- NOME DA ABA ATUALIZADO
                 'PESOS': pd.read_excel(xl, sheet_name='PESOS'),
                 'REST': pd.read_excel(xl, sheet_name='RESTRICOES'),
                 'ATRIB': pd.read_excel(xl, sheet_name='ATRIBUICOES'),
@@ -38,14 +38,14 @@ class ExcelLoader:
 
             # 3. A "PEDRA DE ROSETA" (Tradução exata do Excel para o Python baseada no seu mapa)
             mapeamento = {
-                'TURMAS': {'Turma': 'codigo', 'Curso': 'curso', 'Padrao_FTP': 'padrao_ftp', 'Ativa': 'ativa'},
+                'TURMAS': {'Turma': 'codigo', 'Curso': 'curso', 'Padrao_FTP': 'padrao_ftp', 'Ativa': 'ativa', 'Ano': 'ano'}, # <- Ano adicionado
                 'CURSOS': {'Nome_Curso': 'nome_curso', 'Curso': 'codigo', 'Especialidade_FTP': 'especialidade_ftp', 'Padrao_FTP': 'padrao_ftp'},
-                'PROFESSORES': {'Professor': 'nome', 'Especialidade': 'especialidade', 'Componente': 'componente', 'CH': 'carga_horaria', 'Max_Dias': 'max_dias', 'Ativo': 'ativo'},
-                'ESPEC': {'Id': 'id', 'Componente': 'componente', 'Especialidade': 'nome', 'Sigla': 'sigla', 'Aulas': 'aulas'},
+                'PROFESSORES': {'Professor': 'nome', 'Especialidade': 'especialidade', 'Componente': 'componente', 'CH': 'carga_horaria', 'Max_Dias': 'max_dias', 'Ativo': 'ativo', 'Anos_atuacao': 'anos_atuacao'}, # <- Anos de atuação adicionado
+                'ESPEC': {'Id': 'id', 'Ano': 'ano', 'Componente': 'componente', 'Especialidade': 'nome', 'Sigla': 'sigla', 'Aulas': 'aulas'}, # <- Ano adicionado
                 'PESOS': {'Objetivo': 'objetivo', 'Nível': 'nivel', 'Peso': 'peso'},
                 'REST': {'Regra': 'regra', 'Valor': 'valor'},
                 'ATRIB': {'Turma': 'turma', 'Especialidade': 'especialidade', 'Professor': 'professor'},
-                'PARES': {'Par': 'codigo', 'Especialidade_1': 'especialidade_1', 'Especialidade_2': 'especialidade_2'},
+                'PARES': {'Par': 'codigo', 'Ano': 'ano', 'Especialidade_1': 'especialidade_1', 'Especialidade_2': 'especialidade_2'}, # <- Ano adicionado
                 'PADROES': {'Componente': 'componente', 'Tipo': 'tipo', 'Valor': 'valor'},
                 'SLOTS': {'Dia': 'dia', 'Aula': 'aula'},
                 'AREAS': {'Curso': 'curso', 'Area': 'area'},

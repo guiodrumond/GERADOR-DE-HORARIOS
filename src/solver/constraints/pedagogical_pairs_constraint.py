@@ -3,6 +3,7 @@ from src.data.analyzer import PedagogicalPairsAnalyzer
 class PedagogicalPairsConstraint:
     """
     Garante o cumprimento OBRIGATÓRIO (Hard Constraint) dos Pares Pedagógicos.
+    Evita o Paradoxo do Espelho identificando assimetrias REAIS nos blocos gerados.
     """
 
     def __init__(self, model, variables, base, objective_builder=None):
@@ -32,39 +33,44 @@ class PedagogicalPairsConstraint:
             dados = analise.get(chave_par)
             if not dados:
                 continue
-
-            # 1. Adjacência Obrigatória para TODAS as turmas
-            todas_turmas = set()
+                
             for t1, t2, _, _ in dados["perfeitos"]:
-                todas_turmas.add(t1)
-                todas_turmas.add(t2)
+                # DIAGNÓSTICO ABSOLUTO: 
+                # Contamos as aulas REAIS de cada turma para ter 100% de certeza se o espelho é possível.
+                t1_c1 = self._aulas_reais(t1, c1)
+                t1_c2 = self._aulas_reais(t1, c2)
+                t2_c1 = self._aulas_reais(t2, c1)
+                t2_c2 = self._aulas_reais(t2, c2)
+
+                is_balanced = (t1_c1 == t1_c2) and (t2_c1 == t2_c2) and (t1_c1 == t2_c1) and (t1_c1 > 0)
+
+                if is_balanced:
+                    self._forcar_x_simultaneo(t1, t2, c1, c2)
+                    self._forcar_adjacencia_restrita(t1, c1, c2)
+                    self._forcar_adjacencia_restrita(t2, c1, c2)
+                else:
+                    self._evitar_simultaneidade_interna(t1, c1, c2)
+                    self._evitar_simultaneidade_interna(t2, c1, c2)
+
             for t, _, _ in dados["assimetricos"]:
-                todas_turmas.add(t)
+                t_c1 = self._aulas_reais(t, c1)
+                t_c2 = self._aulas_reais(t, c2)
+                is_balanced = (t_c1 == t_c2) and (t_c1 > 0)
 
-            for turma in todas_turmas:
-                self._forcar_adjacencia_restrita(turma, c1, c2)
+                if is_balanced:
+                    self._forcar_adjacencia_restrita(t, c1, c2)
+                else:
+                    self._evitar_simultaneidade_interna(t, c1, c2)
 
-            # 2. Espelhamento "X" para pares perfeitos
-            for t1, t2, _, _ in dados["perfeitos"]:
-                self._forcar_x_simultaneo(t1, t2, c1, c2)
-
-    def _get_var(self, turma, comp, slot_id):
-        vars_list = self.active_t_c_s.get((turma, comp, slot_id), [])
-        return sum(vars_list) if vars_list else 0
+    # ==================================================
+    # REGRAS ESTRUTURAIS
+    # ==================================================
 
     def _forcar_adjacencia_restrita(self, turma, c1, c2):
         dias = sorted(list({slot.dia for slot in self.base.slots}))
-
         for dia in dias:
             aulas_do_dia = sorted([slot.aula for slot in self.base.slots if slot.dia == dia])
             
-            vars_dia_c1 = [self._get_var(turma, c1, f"{dia}_{a}") for a in aulas_do_dia]
-            vars_dia_c2 = [self._get_var(turma, c2, f"{dia}_{a}") for a in aulas_do_dia]
-            
-            # Mesmo número de aulas no dia
-            self.model.Add(sum(vars_dia_c1) == sum(vars_dia_c2))
-
-            # Se eu existo, um dos meus vizinhos TEM que ser meu par
             for idx, a in enumerate(aulas_do_dia):
                 slot_id = f"{dia}_{a}"
                 v_c1 = self._get_var(turma, c1, slot_id)
@@ -109,3 +115,30 @@ class PedagogicalPairsConstraint:
 
             self.model.Add(v_t1_c1 == v_t2_c2)
             self.model.Add(v_t1_c2 == v_t2_c1)
+
+    def _evitar_simultaneidade_interna(self, turma, c1, c2):
+        for slot in self.base.slots:
+            slot_id = f"{slot.dia}_{slot.aula}"
+            v_c1 = self._get_var(turma, c1, slot_id)
+            v_c2 = self._get_var(turma, c2, slot_id)
+            if not isinstance(v_c1, int) and not isinstance(v_c2, int):
+                self.model.Add(v_c1 + v_c2 <= 1)
+
+    # ==================================================
+    # UTILITÁRIOS
+    # ==================================================
+
+    def _get_var(self, turma, comp, slot_id):
+        vars_list = self.active_t_c_s.get((turma, comp, slot_id), [])
+        return sum(vars_list) if vars_list else 0
+
+    def _aulas_reais(self, turma, comp):
+        """
+        Conta QUANTOS blocos da disciplina a turma realmente possui na memória.
+        Isso anula qualquer erro de tipo (string/int) vindo do Excel.
+        """
+        total = 0
+        for bloco in self.base.blocos:
+            if bloco.turma == turma and comp in bloco.componentes:
+                total += bloco.tamanho
+        return total

@@ -26,6 +26,7 @@ class Turma:
     curso: str
     padrao_ftp: str
     ativa: bool
+    ano: int
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class Professor:
     carga_horaria: int
     max_dias: int
     ativo: bool
+    anos_atuacao: str = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,7 @@ class Especialidade:
     nome: str
     sigla: str
     aulas: int
+    ano: int
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,7 @@ class ParPedagogico:
     """
 
     codigo: str
+    ano: int
     especialidade_1: str
     especialidade_2: str
 

@@ -1,8 +1,6 @@
 from src.domain.database import BaseDados
 
-
 class BaseDadosValidator:
-    
 
     def __init__(self, base: BaseDados) -> None:
         self.base = base
@@ -11,7 +9,7 @@ class BaseDadosValidator:
     def validate(self) -> None:
         self._validar_cursos()
         self._validar_turmas()
-        self._validar_especialidades()
+        self._validar_especialidades() # <-- CORRIGIDO: Retornou para o lugar certo
         self._validar_pares_pedagogicos()
         self._validar_atribuicoes()
         self._validar_slots()
@@ -43,12 +41,13 @@ class BaseDadosValidator:
                 self.erros.append(f"Turma '{turma.codigo}' referencia um curso inexistente: '{turma.curso}'.")
 
     def _validar_especialidades(self) -> None:
-        siglas = [especialidade.sigla for especialidade in self.base.especialidades if especialidade.sigla]
-        self._validar_duplicados(valores=siglas, contexto="ESPECIALIDADES_1ANO.Sigla")
+        # CORRIGIDO: Agora checa a combinação Ano + Sigla!
+        chaves_ano_sigla = [(esp.ano, esp.sigla) for esp in self.base.especialidades if esp.sigla]
+        self._validar_duplicados(valores=chaves_ano_sigla, contexto="ESPECIALIDADES (Ano + Sigla)")
 
         for esp in self.base.especialidades:
             if not esp.sigla:
-                self.erros.append("Especialidade sem sigla encontrada na aba ESPECIALIDADES_1ANO.")
+                self.erros.append("Especialidade sem sigla encontrada na aba ESPECIALIDADES.")
             if esp.aulas <= 0:
                 self.erros.append(f"Especialidade '{esp.sigla}' possui carga horária inválida: {esp.aulas} aulas.")
 
@@ -65,8 +64,6 @@ class BaseDadosValidator:
         turmas_existentes = {turma.codigo for turma in self.base.turmas}
         especialidades_existentes = {esp.sigla for esp in self.base.especialidades}
         
-        # Correção: Se BaseDados possuir uma lista 'professores', valida contra ela. 
-        # Se não possuir, os professores vêm das próprias atribuições, então valida apenas se não está vazio.
         has_lista_professores = hasattr(self.base, 'professores') and bool(self.base.professores)
         if has_lista_professores:
             professores_existentes = {p.nome if hasattr(p, 'nome') else str(p) for p in self.base.professores}
@@ -99,11 +96,10 @@ class BaseDadosValidator:
             if slot.aula <= 0:
                 self.erros.append(f"Slot com número de aula inválido encontrado: Dia '{slot.dia}', Aula '{slot.aula}'.")
 
-    def _validar_duplicados(self, valores: list[str], contexto: str) -> None:
-        vistos = set()
-        
-        for valor in valores:
-
-            if valor in vistos:
-                self.erros.append(f"Valor duplicado em {contexto}: '{valor}'.")
-            vistos.add(valor)
+    # CORRIGIDO: Recuo de indentação (alinhado com as outras funções)
+    def _validar_duplicados(self, valores: list, contexto: str) -> None:
+        chaves_vistas = set()
+        for v in valores:
+            if v in chaves_vistas:
+                self.erros.append(f"Valor duplicado em {contexto}: '{v}'.")
+            chaves_vistas.add(v)
