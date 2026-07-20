@@ -1,0 +1,10 @@
+# Ignora o ambiente virtual
+.venv/
+
+# Ignora as planilhas geradas pelo sistema
+outputs/*.xlsx
+
+# Ignora os arquivos de cache compilados do Python
+__pycache__/
+*.py[cod]
+*$py.class
