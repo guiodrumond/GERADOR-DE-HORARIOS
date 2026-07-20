@@ -1,11 +1,13 @@
 from pathlib import Path
 from openpyxl import Workbook
 from src.export.excel_styles import ExcelStyles
+from src.export.dashboard_exporter import DashboardExporter
 
 class ExcelExporter:
-    # Removemos o planning_result antigo que não tem mais utilidade!
-    def __init__(self, base):
+    def __init__(self, base, solver=None, tempo_decorrido=0.0):
         self.base = base
+        self.solver = solver
+        self.tempo_decorrido = tempo_decorrido
         
         # Mapas auxiliares para cruzar siglas, áreas e professores
         self.componente_para_grupo = self._criar_mapa_componente_grupo()
@@ -19,6 +21,16 @@ class ExcelExporter:
         aba_padrao = workbook.active
         workbook.remove(aba_padrao)
 
+        # 1. Cria a Aba de Painel / Resumo na primeira posição (Índice 0)
+        sheet_dashboard = workbook.create_sheet(title="RESUMO", index=0)
+        dashboard = DashboardExporter(
+            base=self.base, 
+            solver=self.solver, 
+            tempo_decorrido=self.tempo_decorrido
+        )
+        dashboard.export(sheet_dashboard)
+
+        # 2. Cria as demais abas de horários
         sheet_turmas = workbook.create_sheet(title="TURMAS")
         self._write_turmas_sheet(sheet=sheet_turmas, grid=grid)
 
@@ -140,13 +152,11 @@ class ExcelExporter:
             sheet.row_dimensions[row].height = 45
 
             for col_offset, dia in enumerate(dias, start=2):
-                # O novo _entradas_professor_slot agora avisa se achou um planejamento!
                 entradas, is_planning = self._entradas_professor_slot(
                     grid=grid, professor=professor, dia=dia, aula=aula
                 )
 
                 if is_planning:
-                    # Tira duplicatas por segurança e força o grupo para "PLANEJAMENTO"
                     texto = "\n".join(list(dict.fromkeys(entradas))) 
                     grupo = "PLANEJAMENTO"
                 elif entradas:
@@ -211,10 +221,12 @@ class ExcelExporter:
             if not cell or cell.professor != professor:
                 continue
                 
-            # SE FOR PLANEJAMENTO, processa de forma inteligente
             if cell.bloco_id == "PLANEJAMENTO":
                 entradas.append(cell.texto)
                 is_planning = True
+            elif cell.bloco_id == "PROJETO":
+                # Se for PA/PV virtual, anexa APENAS o texto "PA" ou "PV" (sem a turma)
+                entradas.append(cell.texto)
             else:
                 entradas.append(f"{turma} - {cell.texto}")
                 
@@ -259,7 +271,6 @@ class ExcelExporter:
         return mapa
 
     def _criar_mapa_professores_por_area(self):
-        """Mapeia dinamicamente quais professores pertencem a qual área (ex: MEST, LEST)"""
         mapa = {}
         for atribuicao in self.base.atribuicoes:
             if not atribuicao.professor:

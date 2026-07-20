@@ -1,6 +1,10 @@
 import argparse
 import logging
 from pathlib import Path
+from datetime import datetime
+import threading
+import time
+from tqdm import tqdm
 from ortools.sat.python import cp_model
 
 # Importações principais
@@ -66,9 +70,7 @@ def main(input_excel: str, target_turma: str):
     TurmaConflictConstraint(model, variables, base).build()
     ProfessorConflictConstraint(model, variables, base).build()
     
-    # NOVO: Inserimos o bloqueio de Projetos e Atividades Avulsas aqui!
-    # AtividadesAvulsasConstraint(model, variables, base).build()
-    
+    AtividadesAvulsasConstraint(model, variables, base).build()
     TeacherAvailabilityConstraint(model, variables, base).build()
     PedagogicalPairsConstraint(model=model, variables=variables, base=base).build()
     
@@ -82,10 +84,28 @@ def main(input_excel: str, target_turma: str):
     objective_builder.build()
     objective_builder.imprimir_resumo()
 
-    # 5. Solver
+    # 5. Solver com Animação de Cronômetro e Medição de Tempo
     logging.info("Executando Solver...")
     scheduler = Scheduler(model, config=getattr(base, 'config', {}))
-    solver, status = scheduler.solve()
+
+    def rodar_animacao(evento):
+        with tqdm(total=0, desc="🧠 O Solver está pensando", bar_format="{desc} | ⏳ Tempo decorrido: {elapsed}") as pbar:
+            while not evento.is_set():
+                time.sleep(1)
+                pbar.update(1)
+
+    parar_evento = threading.Event()
+    t_animacao = threading.Thread(target=rodar_animacao, args=(parar_evento,))
+    t_animacao.start()
+
+    inicio_tempo = time.time()
+    try:
+        solver, status = scheduler.solve()
+    finally:
+        parar_evento.set()
+        t_animacao.join()
+    fim_tempo = time.time()
+    tempo_decorrido = fim_tempo - inicio_tempo
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         logging.error(f"Não foi possível encontrar uma solução. STATUS: {status}")
@@ -93,7 +113,6 @@ def main(input_excel: str, target_turma: str):
 
     # 6. Relatórios
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
-    # Passa as variáveis capturadas para o GridBuilder
     grid = GridBuilder(schedule, solver=solver, base=base, reuniao_vars=plan_constraint.reuniao_vars).build()
     
     PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
@@ -103,13 +122,16 @@ def main(input_excel: str, target_turma: str):
     GridPrinter.print_turma(grid, target_turma)
         
     # ==========================================
-    # EXPORTAÇÃO COM O CAMINHO CORRETO:
+    # EXPORTAÇÃO COM PAINEL E TIMESTAMP
     # ==========================================
     logging.info("Exportando o horário gerado para Excel...")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    caminho_saida = f"outputs/horario_gerado_{timestamp}.xlsx"
+
     try:
-        exporter = ExcelExporter(base) 
-        exporter.export(grid=grid, caminho_saida="outputs/horario_gerado.xlsx")
-        logging.info("✅ Arquivo Excel exportado com sucesso na pasta 'outputs'!")
+        exporter = ExcelExporter(base=base, solver=solver, tempo_decorrido=tempo_decorrido) 
+        exporter.export(grid=grid, caminho_saida=caminho_saida)
+        logging.info(f"✅ Arquivo Excel exportado com sucesso: {caminho_saida}!")
     except Exception as e:
         logging.error(f"Erro crítico ao tentar exportar o Excel: {e}")
 
