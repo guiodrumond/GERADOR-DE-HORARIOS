@@ -1,5 +1,6 @@
+import logging
 from src.scheduling.grid_models import Grid
-from src.solver.constraints.planejamento_constraint import PlanejamentoMatcher
+from src.domain.matchers import PlanejamentoMatcher
 
 class GridBuilder:
     def __init__(self, schedule, solver=None, base=None, reuniao_vars=None):
@@ -17,13 +18,13 @@ class GridBuilder:
                 grid.set(
                     turma=turma,
                     dia=dia,
-                    aula=aula,
+                    aula=aula, # Aqui a aula sempre foi Número Inteiro
                     texto=entry.componente,
                     bloco_id=entry.bloco_id,
                     professor=entry.professor,
                 )
 
-        # 2. Insere os Planejamentos Coletivos na grade dos professores envolvidos
+        # 2. Insere os Planejamentos Coletivos (Reuniões)
         if self.solver and self.reuniao_vars and self.base:
             matcher = PlanejamentoMatcher(self.base)
             
@@ -33,21 +34,30 @@ class GridBuilder:
                     continue
                 
                 profs_envolvidos = matcher.filtrar_professores(plan)
-                
+                if not profs_envolvidos:
+                    continue
+                    
                 for slot_id, var in slots_dict.items():
                     if self.solver.Value(var) == 1:
-                        dia, aula = slot_id.split('_')
+                        dia, aula_str = slot_id.split('_')
+                        
+                        aula = int(aula_str) 
+                        
+                        logging.info(f"📅 REUNIÃO AGENDADA: '{nome_plan}' marcada na {dia} (Aula {aula}) para {len(profs_envolvidos)} professores.")
+                        
                         for prof in profs_envolvidos:
+                            turma_virtual = f"PLAN_{nome_plan}_{prof.replace(' ', '_')}"
+                            
                             try:
                                 grid.set(
-                                    turma=prof,
+                                    turma=turma_virtual,
                                     dia=dia,
-                                    aula=aula,
-                                    texto=f"PLAN: {nome_plan}",
+                                    aula=aula, 
+                                    texto=f"{nome_plan}", 
                                     bloco_id="PLANEJAMENTO",
                                     professor=prof,
                                 )
-                            except Exception:
-                                pass # Ignora caso a estrutura da grid seja restrita a turmas
+                            except Exception as e:
+                                logging.error(f"❌ Erro ao injetar {nome_plan} para {prof} no grid: {e}")
 
         return grid

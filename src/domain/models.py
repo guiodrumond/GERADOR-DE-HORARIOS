@@ -42,7 +42,8 @@ class Professor:
     carga_horaria: int
     max_dias: int
     ativo: bool
-    anos_atuacao: str = None
+    anos_atuacao: Optional[str] = None
+    area: Optional[str] = None
 
 
 @dataclass(frozen=True)

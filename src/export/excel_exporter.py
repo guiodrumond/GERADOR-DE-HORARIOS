@@ -2,11 +2,10 @@ from pathlib import Path
 from openpyxl import Workbook
 from src.export.excel_styles import ExcelStyles
 
-
 class ExcelExporter:
-    def __init__(self, base, planning_result=None):
+    # Removemos o planning_result antigo que não tem mais utilidade!
+    def __init__(self, base):
         self.base = base
-        self.planning_result = planning_result or []
         
         # Mapas auxiliares para cruzar siglas, áreas e professores
         self.componente_para_grupo = self._criar_mapa_componente_grupo()
@@ -117,22 +116,6 @@ class ExcelExporter:
 
         return body_start + len(aulas)
 
-    def _planning_lookup(self):
-        lookup = {}
-        for item in self.planning_result:
-            nome = item["nome"]
-            dia = item["dia"]
-            area = item["area"]
-
-            # Resgata os professores que pertencem a esta área
-            participantes = self.professores_por_area.get(area, [])
-
-            for professor in participantes:
-                for aula in range(item["aula_inicio"], item["aula_final"] + 1):
-                    lookup[(professor, dia, aula)] = nome
-
-        return lookup
-
     def _write_professor_table(self, sheet, grid, professor, dias, aulas, start_row):
         total_colunas = len(dias) + 1
 
@@ -148,7 +131,6 @@ class ExcelExporter:
         self._write_header(sheet=sheet, dias=dias, row=header_row)
 
         body_start = start_row + 2
-        planning_lookup = self._planning_lookup()
 
         for row_offset, aula in enumerate(aulas):
             row = body_start + row_offset
@@ -158,24 +140,22 @@ class ExcelExporter:
             sheet.row_dimensions[row].height = 45
 
             for col_offset, dia in enumerate(dias, start=2):
-                # Verifica primeiro se o professor tem planejamento neste horário
-                planejamento = planning_lookup.get((professor, dia, aula))
+                # O novo _entradas_professor_slot agora avisa se achou um planejamento!
+                entradas, is_planning = self._entradas_professor_slot(
+                    grid=grid, professor=professor, dia=dia, aula=aula
+                )
 
-                if planejamento:
-                    texto = planejamento
+                if is_planning:
+                    # Tira duplicatas por segurança e força o grupo para "PLANEJAMENTO"
+                    texto = "\n".join(list(dict.fromkeys(entradas))) 
                     grupo = "PLANEJAMENTO"
+                elif entradas:
+                    texto = "\n".join(entradas)
+                    componente = entradas[0].split(" - ")[-1].strip()
+                    grupo = self.componente_para_grupo.get(componente.upper())
                 else:
-                    entradas = self._entradas_professor_slot(
-                        grid=grid, professor=professor, dia=dia, aula=aula
-                    )
-
-                    if entradas:
-                        texto = "\n".join(entradas)
-                        componente = entradas[0].split(" - ")[-1].strip()
-                        grupo = self.componente_para_grupo.get(componente.upper())
-                    else:
-                        texto = ""
-                        grupo = None
+                    texto = ""
+                    grupo = None
 
                 cell = sheet.cell(row=row, column=col_offset, value=texto)
                 ExcelStyles.apply_body(cell, texto, grupo)
@@ -224,12 +204,21 @@ class ExcelExporter:
 
     def _entradas_professor_slot(self, grid, professor, dia, aula):
         entradas = []
+        is_planning = False
+        
         for turma in grid.turmas():
             cell = grid.get(turma, dia, aula)
             if not cell or cell.professor != professor:
                 continue
-            entradas.append(f"{turma} - {cell.texto}")
-        return entradas
+                
+            # SE FOR PLANEJAMENTO, processa de forma inteligente
+            if cell.bloco_id == "PLANEJAMENTO":
+                entradas.append(cell.texto)
+                is_planning = True
+            else:
+                entradas.append(f"{turma} - {cell.texto}")
+                
+        return entradas, is_planning
 
     def _professores_do_grid(self, grid):
         professores = set()
@@ -285,10 +274,3 @@ class ExcelExporter:
                 mapa[area].add(atribuicao.professor)
                 
         return {area: list(profs) for area, profs in mapa.items()}
-
-    def _safe_sheet_name(self, name):
-        invalidos = ["\\", "/", "*", "?", ":", "[", "]"]
-        result = name
-        for char in invalidos:
-            result = result.replace(char, "_")
-        return result[:31]

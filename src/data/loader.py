@@ -38,7 +38,8 @@ class ExcelLoader:
             mapeamento = {
                 'TURMAS': {'Turma': 'codigo', 'Curso': 'curso', 'Padrao_FTP': 'padrao_ftp', 'Ativa': 'ativa', 'Ano': 'ano'},
                 'CURSOS': {'Nome_Curso': 'nome_curso', 'Curso': 'codigo', 'Especialidade_FTP': 'especialidade_ftp', 'Padrao_FTP': 'padrao_ftp'},
-                'PROFESSORES': {'Professor': 'nome', 'Especialidade': 'especialidade', 'Componente': 'componente', 'CH': 'carga_horaria', 'Max_Dias': 'max_dias', 'Ativo': 'ativo', 'Anos_atuacao': 'anos_atuacao'},
+                # --- A COLUNA AREA FOI ADICIONADA AO MAPEAMENTO DOS PROFESSORES AQUI ---
+                'PROFESSORES': {'Professor': 'nome', 'Especialidade': 'especialidade', 'Componente': 'componente', 'Anos_atuacao': 'anos_atuacao', 'Area': 'area', 'CH': 'carga_horaria', 'Max_Dias': 'max_dias', 'Ativo': 'ativo'},
                 'ESPEC': {'Id': 'id', 'Ano': 'ano', 'Componente': 'componente', 'Especialidade': 'nome', 'Sigla': 'sigla', 'Aulas': 'aulas'},
                 'PESOS': {'Objetivo': 'objetivo', 'Nível': 'nivel', 'Peso': 'peso'},
                 'REST': {'Regra': 'regra', 'Valor': 'valor'},
@@ -77,7 +78,7 @@ class ExcelLoader:
                 planejamentos=[Planejamento(
                     nome=str(row['Reuniao']),
                     tamanho=int(row['Tamanho']),
-                    ano=str(row['Ano']) if pd.notna(row['Ano']) else None,
+                    ano=str(row['Anos_atuacao']) if pd.notna(row['Anos_atuacao']) else None,
                     area=str(row['Area']) if pd.notna(row['Area']) else None,
                     componente=str(row['Componente']) if pd.notna(row['Componente']) else None,
                     especialidade=str(row['Especialidade']) if pd.notna(row['Especialidade']) else None

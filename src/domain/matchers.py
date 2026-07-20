@@ -5,27 +5,49 @@ class PlanejamentoMatcher:
     def filtrar_professores(self, planejamento):
         profs = set()
         
-        # Helper para processar filtros tipo "1,2,3" ou "Tecnologia,Negócios"
-        def check_match(valor_excel, valor_atribuicao):
-            if not valor_excel: return True
-            lista_filtros = [str(x).strip() for x in str(valor_excel).split(',')]
-            return str(valor_atribuicao).strip() in lista_filtros
+        # Função para limpar sujeiras do Excel/Pandas
+        def clean_val(v):
+            if v is None: return ""
+            s = str(v).strip().upper()
+            if s.endswith(".0"): s = s[:-2] # Conserta o bug do Pandas (1.0 -> 1)
+            return s
 
-        for atr in self.base.atribuicoes:
-            turma = next((t for t in self.base.turmas if t.codigo == atr.turma), None)
-            area_obj = next((a for a in self.base.areas if a.curso == turma.curso), None)
-            area_valor = area_obj.area if area_obj else None
-            esp_obj = next((e for e in self.base.especialidades if e.nome == atr.especialidade), None)
-            area_obj = next((a for a in self.base.areas if a.curso == turma.curso), None)
-
-            comp_valor = esp_obj.componente if esp_obj else None
-            area_valor = area_obj.area if area_obj else None
+        def check_match(valor_excel, valor_memoria):
+            v_excel = clean_val(valor_excel)
+            # Se não há filtro no Excel ou é vazio/NaN, passa direto
+            if not v_excel or v_excel in ('NAN', 'NONE', 'NAT'): 
+                return True
             
-            if (check_match(planejamento.ano, turma.ano) and
-                check_match(planejamento.area, area_valor) and
-                check_match(planejamento.componente, comp_valor) and
-                check_match(planejamento.especialidade, atr.especialidade)):
-                
-                profs.add(atr.professor)
+            v_mem = clean_val(valor_memoria)
+            # Se há filtro exigido no Excel, mas o professor não tem essa info, falha
+            if not v_mem: 
+                return False
+            
+            # Divide os filtros por vírgula (ex: "1, 2" vira ["1", "2"])
+            lista_filtros = [x.strip() for x in v_excel.split(',')]
+            return v_mem in lista_filtros
 
+        # OLHANDO APENAS PARA A ABA DE PROFESSORES:
+        for prof in self.base.professores:
+            
+            # Coleta os dados diretamente do objeto Professor
+            # Usa getattr para garantir que não dê erro caso o nome da propriedade mude
+            nome = getattr(prof, 'nome', None) or getattr(prof, 'professor', None)
+            anos = getattr(prof, 'anos_atuacao', None)
+            comp = getattr(prof, 'componente', None)
+            esp = getattr(prof, 'especialidade', None)
+            
+            # Se a classe Professor tiver a propriedade 'area', ele pega. Se não, fica None.
+            area = getattr(prof, 'area', None) 
+            
+            if not nome:
+                continue
+
+            if (check_match(planejamento.ano, anos) and
+                check_match(planejamento.componente, comp) and
+                check_match(planejamento.especialidade, esp) and
+                check_match(planejamento.area, area)):
+                
+                profs.add(nome)
+                
         return list(profs)
