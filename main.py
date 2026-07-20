@@ -19,6 +19,7 @@ from src.solver.constraints.professor_conflict_constraint import ProfessorConfli
 from src.solver.constraints.teacher_availability_constraint import TeacherAvailabilityConstraint
 from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairsConstraint
 from src.solver.constraints.planejamento_constraint import PlanejamentoConstraint
+from src.solver.constraints.atividades_avulsas_constraint import AtividadesAvulsasConstraint
 
 # Solvers e Relatórios
 from src.solver.scheduler import Scheduler
@@ -64,6 +65,10 @@ def main(input_excel: str, target_turma: str):
     BlockAssignmentConstraint(model, variables).build()
     TurmaConflictConstraint(model, variables, base).build()
     ProfessorConflictConstraint(model, variables, base).build()
+    
+    # NOVO: Inserimos o bloqueio de Projetos e Atividades Avulsas aqui!
+    # AtividadesAvulsasConstraint(model, variables, base).build()
+    
     TeacherAvailabilityConstraint(model, variables, base).build()
     PedagogicalPairsConstraint(model=model, variables=variables, base=base).build()
     
@@ -103,13 +108,6 @@ def main(input_excel: str, target_turma: str):
     logging.info("Exportando o horário gerado para Excel...")
     try:
         exporter = ExcelExporter(base) 
-        
-        # Coloque 'outputs/' antes do nome do arquivo!
-        exporter.export(grid=grid, caminho_saida="outputs/horario_gerado.xlsx")
-        
-        logging.info("✅ Arquivo Excel exportado com sucesso na pasta 'outputs'!")
-    except TypeError:
-        exporter = ExcelExporter()
         exporter.export(grid=grid, caminho_saida="outputs/horario_gerado.xlsx")
         logging.info("✅ Arquivo Excel exportado com sucesso na pasta 'outputs'!")
     except Exception as e:

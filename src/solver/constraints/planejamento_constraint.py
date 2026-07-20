@@ -9,10 +9,8 @@ class PlanejamentoConstraint:
         self.base = base
         self.atribuicoes_map = atribuicoes_map
         self.matcher = PlanejamentoMatcher(base)
-        self.reuniao_vars = {} # Pertence à classe
-        
-        # Cache idêntico ao do ProfessorConflictConstraint
-        self.mapa_professores = self._criar_mapa_professores()
+        self.reuniao_vars = {} # Usado pelo GridBuilder
+        self.mapa_professores = {}
 
     def _criar_mapa_professores(self):
         mapa = {}
@@ -50,42 +48,88 @@ class PlanejamentoConstraint:
         return aula_inicio <= aula_alvo <= aula_final
 
     def build(self):
+        self.mapa_professores = self._criar_mapa_professores()
+
+        # Agrupa os slots disponíveis por dia da semana
+        dias_slots = {}
+        for slot in self.base.slots:
+            if slot.dia not in dias_slots:
+                dias_slots[slot.dia] = set()
+            dias_slots[slot.dia].add(slot.aula)
+
         for plan in self.base.planejamentos:
             profs_envolvidos = set(self.matcher.filtrar_professores(plan))
-            if not profs_envolvidos: continue
+            if not profs_envolvidos: 
+                continue
 
-            # Prepara o dicionário para guardar as variáveis desta reunião específica
             self.reuniao_vars[plan.nome] = {}
-            reuniao_vars_list = []
+            tamanho = plan.tamanho
+            
+            window_vars = []
+            slot_to_windows = {f"{slot.dia}_{slot.aula}": [] for slot in self.base.slots}
 
-            # Cria variáveis: reuniao_ativa[slot] = 1 se a reunião ocorrer naquele slot
+            # Cria as Janelas Contínuas válidas para este planejamento no mesmo dia
+            for dia, aulas in dias_slots.items():
+                sorted_aulas = sorted(list(aulas))
+                for i in range(len(sorted_aulas) - tamanho + 1):
+                    janela_aulas = sorted_aulas[i : i + tamanho]
+                    
+                    # Garante que as aulas são estritamente consecutivas
+                    if janela_aulas == list(range(janela_aulas[0], janela_aulas[0] + tamanho)):
+                        inicio_aula = janela_aulas[0]
+                        w_var = self.model.NewBoolVar(f"plan_{plan.nome}_{dia}_aulas_{inicio_aula}_to_{janela_aulas[-1]}")
+                        window_vars.append(w_var)
+                        
+                        # Associa essa janela contínua aos slots que ela cobre
+                        for a in janela_aulas:
+                            s_id = f"{dia}_{a}"
+                            if s_id in slot_to_windows:
+                                slot_to_windows[s_id].append(w_var)
+
+            if not window_vars:
+                continue
+
+            # 1. Duração/Continuidade: Exatamente UMA janela contínua deve ser escolhida para a reunião
+            self.model.Add(sum(window_vars) == 1)
+
+            # 2. Conecta as janelas aos slots individuais para consulta do GridBuilder e restrições de conflito
             for slot in self.base.slots:
                 slot_id = f"{slot.dia}_{slot.aula}"
-                var = self.model.NewBoolVar(f"plan_{plan.nome}_{slot_id}")
+                covering_windows = slot_to_windows.get(slot_id, [])
                 
-                self.reuniao_vars[plan.nome][slot_id] = var
-                reuniao_vars_list.append(var)
+                slot_active_var = self.model.NewBoolVar(f"plan_active_{plan.nome}_{slot_id}")
+                self.reuniao_vars[plan.nome][slot_id] = slot_active_var
 
-            # 1. Duração: A soma dos slots escolhidos deve ser igual ao tamanho da reunião
-            self.model.Add(sum(reuniao_vars_list) == plan.tamanho)
+                if covering_windows:
+                    self.model.Add(slot_active_var == sum(covering_windows))
+                else:
+                    self.model.Add(slot_active_var == 0)
 
-            # 2. Conflito: O Solver não pode alocar reuniões e blocos reais no mesmo slot
+            # 3. Conflito: O Solver não pode alocar aulas reais para os professores envolvidos nos slots da reunião
             for slot in self.base.slots:
                 slot_id = f"{slot.dia}_{slot.aula}"
+                slot_active_var = self.reuniao_vars[plan.nome][slot_id]
+                
                 aulas_dos_professores = []
-
                 for bloco in self.base.blocos:
                     profs_bloco = self._professores_do_bloco(bloco)
-                    
-                    # Se algum professor do bloco pertence aos professores desta reunião
                     if not profs_bloco.isdisjoint(profs_envolvidos):
                         variaveis_do_bloco = self.variables.get(bloco.id, {})
-                        
-                        # Verifica se a variável do bloco engloba o slot da reunião
                         for slot_inicio_id, var_bloco in variaveis_do_bloco.items():
                             if self._bloco_ocupa_slot(bloco, slot_inicio_id, slot_id):
-                                aulas_dos_professores.append(var_bloco)
+                                auleas_dos_professores_append = aulas_dos_professores.append(var_bloco)
                 
-                # Se a reunião for ativada no 'slot_id', a soma de aulas reais para esses profs DEVE ser zero.
                 if aulas_dos_professores:
-                    self.model.Add(sum(aulas_dos_professores) == 0).OnlyEnforceIf(self.reuniao_vars[plan.nome][slot_id])
+                    self.model.Add(sum(aulas_dos_professores) == 0).OnlyEnforceIf(slot_active_var)
+
+        # 4. Não sobreposição de planejamentos (Coordenadores participam de todos sem conflito de horário)
+        for slot in self.base.slots:
+            slot_id = f"{slot.dia}_{slot.aula}"
+            reunioes_no_slot = []
+            
+            for plan in self.base.planejamentos:
+                if plan.nome in self.reuniao_vars and slot_id in self.reuniao_vars[plan.nome]:
+                    reunioes_no_slot.append(self.reuniao_vars[plan.nome][slot_id])
+            
+            if reunioes_no_slot:
+                self.model.Add(sum(reunioes_no_slot) <= 1)

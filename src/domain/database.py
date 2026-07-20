@@ -28,3 +28,5 @@ class BaseDados:
     disponibilidade: dict | None = None
 
     planejamentos: list = field(default_factory=list)
+
+    atividades_avulsas: list['AtividadeAvulsa'] = field(default_factory=list)

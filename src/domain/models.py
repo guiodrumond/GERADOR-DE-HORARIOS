@@ -204,3 +204,11 @@ class Planejamento:
     area: Optional[str] = None
     componente: Optional[str] = None
     especialidade: Optional[str] = None
+
+@dataclass(frozen=True)
+class AtividadeAvulsa:
+    professor: str
+    atividade: str
+    dia: str
+    aula_inicial: int
+    aula_final: int
