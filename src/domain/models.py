@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -193,3 +194,12 @@ class RegraParametrizada:
     valor: str
 
     regra_original: str
+
+@dataclass(frozen=True)
+class Planejamento:
+    nome: str
+    tamanho: int
+    ano: Optional[str] = None
+    area: Optional[str] = None
+    componente: Optional[str] = None
+    especialidade: Optional[str] = None

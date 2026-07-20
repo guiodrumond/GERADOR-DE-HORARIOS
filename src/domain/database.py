@@ -3,6 +3,7 @@ from src.domain.models import (
     Curso, Turma, Professor, Especialidade, ParPedagogico, PadraoPedagogico,
     Atribuicao, BlocoPedagogico, Slot, Restricao, AreaCurso, AfinidadeArea, Peso
 )
+from dataclasses import dataclass, field
 
 @dataclass
 class BaseDados:
@@ -25,3 +26,5 @@ class BaseDados:
     
     # A sua sacada de mestre:
     disponibilidade: dict | None = None
+
+    planejamentos: list = field(default_factory=list)

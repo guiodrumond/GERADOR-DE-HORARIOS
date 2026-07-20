@@ -9,19 +9,22 @@ from openpyxl.styles import (
 
 class ExcelStyles:
 
-    TITLE_FILL = "1F4E78"
-    HEADER_FILL = "D9EAF7"
-    EMPTY_FILL = "F2F2F2"
-    BORDER_COLOR = "BFBFBF"
+    TITLE_FILL = "34495E"
+    HEADER_FILL = "34495E"
+    EMPTY_FILL = "F2F3F4"
+    BORDER_COLOR = "DDDDDD"
 
     AREA_COLORS = {
-        "CHSA": "FCE4D6",
-        "CNST": "DDEBF7",
-        "LEST": "EADCF8",
-        "MEST": "A9D18E",
-        "FTP": "FFD966",
-        "PROJ": "F4B183",
-        "PLANEJAMENTO": "C6E0B4",
+        "MEST": {"bg": "D6EAF8", "font": "2874A6"},
+        "CNST": {"bg": "D5F5E3", "font": "1E8449"},
+        "CHSA": {"bg": "FADBD8", "font": "943126"},
+        "LEST": {"bg": "FFE6CC", "font": "935116"},
+        "FTP": {"bg": "E8DAEF", "font": "6C3483"},
+        "PV": {"bg": "D1F2EB", "font": "117A65"},
+        "PA": {"bg": "E5E7E9", "font": "5D6D7A"},
+        "PROJ": {"bg": "E5E7E9", "font": "5D6D7A"},
+        "PLANEJAMENTO": {"bg": "C6E0B4", "font": "385723"},
+        "DEFAULT": {"bg": "FFFFFF", "font": "000000"}
     }
 
     @classmethod
@@ -77,8 +80,8 @@ class ExcelStyles:
 
             cor = cls.AREA_COLORS.get(
                 area.upper(),
-                "FFFFFF",
-            )
+                cls.AREA_COLORS["DEFAULT"],
+            )["bg"]
 
         return PatternFill(
             fill_type="solid",
@@ -112,7 +115,7 @@ class ExcelStyles:
 
         cell.font = Font(
             bold=True,
-            color="000000",
+            color="FFFFFF",
         )
 
         cell.fill = cls.header_fill()
@@ -132,9 +135,25 @@ class ExcelStyles:
         area=None,
     ):
 
+        font_color = "000000"
+        is_bold = False
+
+        if texto:
+            if area:
+                estilo = cls.AREA_COLORS.get(
+                    area.upper(), 
+                    cls.AREA_COLORS["DEFAULT"]
+                )
+                font_color = estilo["font"]
+                is_bold = True
+
+            cell.fill = cls.area_fill(area)
+        else:
+            cell.fill = cls.empty_fill()
+
         cell.font = Font(
-            bold=False,
-            color="000000",
+            bold=is_bold,
+            color=font_color,
         )
 
         cell.alignment = Alignment(
@@ -145,16 +164,6 @@ class ExcelStyles:
 
         cell.border = cls.thin_border()
 
-        if texto:
-
-            cell.fill = cls.area_fill(
-                area
-            )
-
-        else:
-
-            cell.fill = cls.empty_fill()
-
     @classmethod
     def apply_aula_cell(
         cls,
@@ -163,7 +172,7 @@ class ExcelStyles:
 
         cell.font = Font(
             bold=True,
-            color="000000",
+            color="FFFFFF",
         )
 
         cell.fill = cls.header_fill()

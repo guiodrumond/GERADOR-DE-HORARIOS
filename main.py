@@ -18,6 +18,7 @@ from src.solver.constraints.class_conflict_constraint import TurmaConflictConstr
 from src.solver.constraints.professor_conflict_constraint import ProfessorConflictConstraint
 from src.solver.constraints.teacher_availability_constraint import TeacherAvailabilityConstraint
 from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairsConstraint
+from src.solver.constraints.planejamento_constraint import PlanejamentoConstraint
 
 # Solvers e Relatórios
 from src.solver.scheduler import Scheduler
@@ -65,6 +66,10 @@ def main(input_excel: str, target_turma: str):
     ProfessorConflictConstraint(model, variables, base).build()
     TeacherAvailabilityConstraint(model, variables, base).build()
     PedagogicalPairsConstraint(model=model, variables=variables, base=base).build()
+    
+    # Salva a instância para capturar as variáveis de planejamento e injeta a restrição
+    plan_constraint = PlanejamentoConstraint(model, variables, base, analise_atribuicao)
+    plan_constraint.build()
 
     # 4. Objetivos (Soft)
     objective_builder = ObjectiveBuilder(model=model, variables=variables, base=base, regras=regras)
@@ -83,19 +88,14 @@ def main(input_excel: str, target_turma: str):
 
     # 6. Relatórios
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
-    grid = GridBuilder(schedule).build()
+    # Passa as variáveis capturadas para o GridBuilder
+    grid = GridBuilder(schedule, solver=solver, base=base, reuniao_vars=plan_constraint.reuniao_vars).build()
     
     PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
     AreaGroupingReporter(solver=solver, variables=variables, base=base).print_report()
         
     print(f"\n===== AMOSTRA DE HORÁRIO: {target_turma} =====")
     GridPrinter.print_turma(grid, target_turma)
-    
-    logging.info("Processo finalizado com sucesso.")
-
-    # ... código anterior ...
-    PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
-    AreaGroupingReporter(solver=solver, variables=variables, base=base).print_report()
         
     # ==========================================
     # EXPORTAÇÃO COM O CAMINHO CORRETO:
