@@ -44,6 +44,7 @@ class Professor:
     ativo: bool
     anos_atuacao: Optional[str] = None
     area: Optional[str] = None
+    plan_ind: int = 0
 
 
 @dataclass(frozen=True)

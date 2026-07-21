@@ -227,6 +227,9 @@ class ExcelExporter:
             elif cell.bloco_id == "PROJETO":
                 # Se for PA/PV virtual, anexa APENAS o texto "PA" ou "PV" (sem a turma)
                 entradas.append(cell.texto)
+            elif cell.bloco_id == "A_DEFINIR":
+                # Nova regra: O A DEFINIR também imprime apenas o texto limpo
+                entradas.append(cell.texto)
             else:
                 entradas.append(f"{turma} - {cell.texto}")
                 

@@ -81,6 +81,7 @@ def main(input_excel: str, target_turma: str):
     # 4. Objetivos (Soft)
     objective_builder = ObjectiveBuilder(model=model, variables=variables, base=base, regras=regras)
     AreaCompactnessObjective(model=model, variables=variables, base=base, regras=regras, objective_builder=objective_builder).build()
+
     objective_builder.build()
     objective_builder.imprimir_resumo()
 
@@ -113,8 +114,8 @@ def main(input_excel: str, target_turma: str):
 
     # 6. Relatórios
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
-    grid = GridBuilder(schedule, solver=solver, base=base, reuniao_vars=plan_constraint.reuniao_vars).build()
-    
+    grid = GridBuilder(schedule, solver=solver, base=base, reuniao_vars=plan_constraint.reuniao_vars, variables=variables).build()
+
     PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
     AreaGroupingReporter(solver=solver, variables=variables, base=base).print_report()
         

@@ -39,7 +39,7 @@ class ExcelLoader:
             mapeamento = {
                 'TURMAS': {'Turma': 'codigo', 'Curso': 'curso', 'Padrao_FTP': 'padrao_ftp', 'Ativa': 'ativa', 'Ano': 'ano'},
                 'CURSOS': {'Nome_Curso': 'nome_curso', 'Curso': 'codigo', 'Especialidade_FTP': 'especialidade_ftp', 'Padrao_FTP': 'padrao_ftp'},
-                'PROFESSORES': {'Professor': 'nome', 'Especialidade': 'especialidade', 'Componente': 'componente', 'Anos_atuacao': 'anos_atuacao', 'Area': 'area', 'CH': 'carga_horaria', 'Max_Dias': 'max_dias', 'Ativo': 'ativo'},
+                'PROFESSORES': {'Professor': 'nome', 'Especialidade': 'especialidade', 'Componente': 'componente', 'Anos_atuacao': 'anos_atuacao', 'Area': 'area', 'CH': 'carga_horaria', 'Plan_Ind': 'plan_ind', 'Max_Dias': 'max_dias', 'Ativo': 'ativo'},
                 'ESPEC': {'Id': 'id', 'Ano': 'ano', 'Componente': 'componente', 'Especialidade': 'nome', 'Sigla': 'sigla', 'Aulas': 'aulas'},
                 'PESOS': {'Objetivo': 'objetivo', 'Nível': 'nivel', 'Peso': 'peso'},
                 'REST': {'Regra': 'regra', 'Valor': 'valor'},
@@ -56,6 +56,10 @@ class ExcelLoader:
             for chave, df in dfs.items():
                 if chave in mapeamento:
                     df = df.rename(columns=mapeamento[chave])
+                    
+                    # BLINDAGEM CONTRA "SUJEIRA" DO EXCEL (Ignora colunas Unnamed ou não mapeadas)
+                    colunas_validas = [c for c in mapeamento[chave].values() if c in df.columns]
+                    df = df[colunas_validas]
                 
                 df = df.dropna(how='all')
                 df = df.where(pd.notnull(df), None)
@@ -72,7 +76,7 @@ class ExcelLoader:
                 restricoes=[Restricao(**d) for d in dados_prontos['REST']],
                 atribuicoes=[Atribuicao(**d) for d in dados_prontos['ATRIB']],
                 slots=[Slot(**d) for d in dados_prontos['SLOTS']],
-                professores=[Professor(**d) for d in dados_prontos['PROFESSORES']],
+                professores=[Professor(**{**d, 'plan_ind': int(float(d.get('plan_ind') or 0))}) for d in dados_prontos['PROFESSORES']],
                 pesos=[Peso(**d) for d in dados_prontos['PESOS']],
                 areas=[AreaCurso(**d) for d in dados_prontos['AREAS']],
                 afinidade_areas=[AfinidadeArea(**d) for d in dados_prontos['AFINIDADE']],
