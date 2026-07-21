@@ -33,6 +33,7 @@ from src.scheduling.grid_printer import GridPrinter
 from src.export.excel_exporter import ExcelExporter
 from src.solver.objectives.objective_builder import ObjectiveBuilder
 from src.solver.objectives.area_compactness_objective import AreaCompactnessObjective
+from src.solver.objectives.teacher_compactness_objective import TeacherCompactnessObjective
 from src.solver.planning.planning_window_builder import PlanningWindowBuilder
 from src.solver.planning.planning_variables import PlanningVariables
 from src.solver.planning.teacher_availability_builder import TeacherAvailabilityBuilder
@@ -81,7 +82,8 @@ def main(input_excel: str, target_turma: str):
     # 4. Objetivos (Soft)
     objective_builder = ObjectiveBuilder(model=model, variables=variables, base=base, regras=regras)
     AreaCompactnessObjective(model=model, variables=variables, base=base, regras=regras, objective_builder=objective_builder).build()
-
+    TeacherCompactnessObjective(model=model, variables=variables, base=base, regras=regras, objective_builder=objective_builder).build()
+    
     objective_builder.build()
     objective_builder.imprimir_resumo()
 
