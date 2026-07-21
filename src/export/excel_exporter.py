@@ -152,7 +152,8 @@ class ExcelExporter:
             sheet.row_dimensions[row].height = 45
 
             for col_offset, dia in enumerate(dias, start=2):
-                entradas, is_planning = self._entradas_professor_slot(
+                # Desempacota as 3 variáveis retornadas pelo novo método
+                entradas, is_planning, bloco_id = self._entradas_professor_slot(
                     grid=grid, professor=professor, dia=dia, aula=aula
                 )
 
@@ -161,8 +162,17 @@ class ExcelExporter:
                     grupo = "PLANEJAMENTO"
                 elif entradas:
                     texto = "\n".join(entradas)
-                    componente = entradas[0].split(" - ")[-1].strip()
-                    grupo = self.componente_para_grupo.get(componente.upper())
+                    
+                    # MAGIA AQUI: Decide a cor com base no bloco verdadeiro, ignorando o texto!
+                    if bloco_id == "ATIVIDADE":
+                        grupo = "ATIVIDADE"
+                    elif bloco_id == "A_DEFINIR":
+                        grupo = "A DEFINIR"
+                    elif bloco_id == "PROJETO":
+                        grupo = texto.upper()
+                    else:
+                        componente = entradas[0].split(" - ")[-1].strip()
+                        grupo = self.componente_para_grupo.get(componente.upper())
                 else:
                     texto = ""
                     grupo = None
@@ -215,25 +225,24 @@ class ExcelExporter:
     def _entradas_professor_slot(self, grid, professor, dia, aula):
         entradas = []
         is_planning = False
+        bloco_encontrado = None
         
         for turma in grid.turmas():
             cell = grid.get(turma, dia, aula)
             if not cell or cell.professor != professor:
                 continue
+
+            bloco_encontrado = cell.bloco_id
                 
             if cell.bloco_id == "PLANEJAMENTO":
                 entradas.append(cell.texto)
                 is_planning = True
-            elif cell.bloco_id == "PROJETO":
-                # Se for PA/PV virtual, anexa APENAS o texto "PA" ou "PV" (sem a turma)
-                entradas.append(cell.texto)
-            elif cell.bloco_id == "A_DEFINIR":
-                # Nova regra: O A DEFINIR também imprime apenas o texto limpo
-                entradas.append(cell.texto)
+            elif cell.bloco_id in ["PROJETO", "ATIVIDADE", "A_DEFINIR"]:
+                entradas.append(cell.texto) # Imprime limpo, sem o ID da turma virtual
             else:
                 entradas.append(f"{turma} - {cell.texto}")
                 
-        return entradas, is_planning
+        return entradas, is_planning, bloco_encontrado
 
     def _professores_do_grid(self, grid):
         professores = set()

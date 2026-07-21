@@ -24,7 +24,8 @@ class ExcelStyles:
         "PA": {"bg": "E5E7E9", "font": "5D6D7A"},
         "PROJ": {"bg": "E5E7E9", "font": "5D6D7A"},
         "PLANEJAMENTO": {"bg": "C6E0B4", "font": "385723"},
-        "DEFAULT": {"bg": "FFFFFF", "font": "000000"}
+        "ATIVIDADE": {"bg": "F9E79F", "font": "7D6608"},
+        "DEFAULT": {"bg": "F2F4F4", "font": "7F8C8D"}
     }
 
     @classmethod

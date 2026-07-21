@@ -118,6 +118,38 @@ class GridBuilder:
                                 logging.warning(f"  ⚠️ ERRO: Faltam dados na restrição para {tipo}_{ano}. Lidos: {props}")
             logging.info("="*50 + "\n")
 
+        # ==========================================================
+        # 4. Insere Atividades Avulsas (PRIORIDADE ALTA)
+        # ==========================================================
+        if hasattr(self.base, 'atividades_avulsas') and self.base.atividades_avulsas:
+            logging.info("\n" + "="*50)
+            logging.info("🔍 INICIANDO MAPEAMENTO DE ATIVIDADES AVULSAS")
+            logging.info("="*50)
+            
+            for ativ in self.base.atividades_avulsas:
+                prof_nome = ativ.professor
+                # Tenta pegar o nome da atividade (pode estar como 'atividade' ou 'nome' na sua classe)
+                texto_ativ = getattr(ativ, 'atividade', getattr(ativ, 'nome', 'ATIVIDADE'))
+                dia = ativ.dia
+                
+                try:
+                    a_ini = int(float(ativ.aula_inicial))
+                    a_fim = int(float(ativ.aula_final))
+                    
+                    for aula in range(a_ini, a_fim + 1):
+                        turma_virtual = f"ATIV_{texto_ativ.replace(' ', '_')}_{prof_nome.replace(' ', '_')}"
+                        
+                        grid.set(
+                            turma=turma_virtual,
+                            dia=dia,
+                            aula=aula,
+                            texto=texto_ativ,
+                            bloco_id="ATIVIDADE",
+                            professor=prof_nome
+                        )
+                except Exception as e:
+                    logging.error(f"❌ Erro ao injetar {texto_ativ} para {prof_nome}: {e}")
+
         # 4. PREENCHIMENTO RÍGIDO: "A DEFINIR" ATÉ ATINGIR A CH
         if self.base:
             logging.info("\n" + "="*50)

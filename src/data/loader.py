@@ -4,7 +4,7 @@ from src.domain.database import BaseDados
 from src.domain.models import (
     Curso, Turma, Professor, Especialidade, Peso, Restricao,
     Atribuicao, ParPedagogico, PadraoPedagogico, Slot,
-    AreaCurso, AfinidadeArea, Planejamento,
+    AreaCurso, AfinidadeArea, Planejamento, AtividadeAvulsa
 )
 
 class ExcelLoader:
@@ -87,9 +87,10 @@ class ExcelLoader:
                     area=str(row['Area']) if pd.notna(row['Area']) else None,
                     componente=str(row['Componente']) if pd.notna(row['Componente']) else None,
                     especialidade=str(row['Especialidade']) if pd.notna(row['Especialidade']) else None
-                ) for _, row in dfs['PLAN'].iterrows()]
+                ) for _, row in dfs['PLAN'].iterrows()], # <-- A VÍRGULA SALVADORA AQUI
+                atividades_avulsas=[AtividadeAvulsa(**d) for d in dados_prontos.get('AVULSAS', [])]
             )
-
+            
             logging.info("✅ Base de dados perfeitamente mapeada e carregada.")
             return base
 
