@@ -117,7 +117,7 @@ class PlanejamentoConstraint:
                         variaveis_do_bloco = self.variables.get(bloco.id, {})
                         for slot_inicio_id, var_bloco in variaveis_do_bloco.items():
                             if self._bloco_ocupa_slot(bloco, slot_inicio_id, slot_id):
-                                auleas_dos_professores_append = aulas_dos_professores.append(var_bloco)
+                                aulas_dos_professores.append(var_bloco)
                 
                 if aulas_dos_professores:
                     self.model.Add(sum(aulas_dos_professores) == 0).OnlyEnforceIf(slot_active_var)

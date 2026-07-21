@@ -24,6 +24,7 @@ from src.solver.constraints.teacher_availability_constraint import TeacherAvaila
 from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairsConstraint
 from src.solver.constraints.planejamento_constraint import PlanejamentoConstraint
 from src.solver.constraints.atividades_avulsas_constraint import AtividadesAvulsasConstraint
+from src.solver.constraints.max_dias_constraint import MaxDiasConstraint
 
 # Solvers e Relatórios
 from src.solver.scheduler import Scheduler
@@ -65,20 +66,27 @@ def main(input_excel: str, target_turma: str):
     planning_windows = PlanningWindowBuilder(base=base, tamanho_janela=2).build()
     planning_variables = PlanningVariables(model=model, planning_windows=planning_windows, base=base).build()
     
-    # Restrições Hard
+    # Restrições Hard Base
     RuleEngine(model=model, variables=variables, base=base, regras=regras).build()
     BlockAssignmentConstraint(model, variables).build()
     TurmaConflictConstraint(model, variables, base).build()
     ProfessorConflictConstraint(model, variables, base).build()
     
+    # ==========================================
+    # CORREÇÃO DE FLUXO DE DADOS: PLANEJAMENTO E MAX_DIAS
+    # ==========================================
+    # Passo A: Cria o planejamento e guarda as variáveis geradas primeiro
+    plan_constraint = PlanejamentoConstraint(model, variables, base, analise_atribuicao)
+    plan_constraint.build()
+    
+    # Passo B: Agora constrói o MaxDias entregando as variáveis do planejamento para ele somar
+    MaxDiasConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars).build()
+    # ==========================================
+
     AtividadesAvulsasConstraint(model, variables, base).build()
     TeacherAvailabilityConstraint(model, variables, base).build()
     PedagogicalPairsConstraint(model=model, variables=variables, base=base).build()
     
-    # Salva a instância para capturar as variáveis de planejamento e injeta a restrição
-    plan_constraint = PlanejamentoConstraint(model, variables, base, analise_atribuicao)
-    plan_constraint.build()
-
     # 4. Objetivos (Soft)
     objective_builder = ObjectiveBuilder(model=model, variables=variables, base=base, regras=regras)
     AreaCompactnessObjective(model=model, variables=variables, base=base, regras=regras, objective_builder=objective_builder).build()
