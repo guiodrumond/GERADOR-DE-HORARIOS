@@ -3,12 +3,13 @@ from src.scheduling.grid_models import Grid
 from src.domain.matchers import PlanejamentoMatcher
 
 class GridBuilder:
-    def __init__(self, schedule, solver=None, base=None, reuniao_vars=None, variables=None):
+    def __init__(self, schedule, solver=None, base=None, reuniao_vars=None, variables=None, plan_ind_vars=None):
         self.schedule = schedule
         self.solver = solver
         self.base = base
         self.reuniao_vars = reuniao_vars
         self.variables = variables or {}
+        self.plan_ind_vars = plan_ind_vars or {}  # <--- Guarda as variáveis da Janela Deslizante
 
     def build(self):
         grid = Grid()
@@ -56,6 +57,29 @@ class GridBuilder:
                                 )
                             except Exception as e:
                                 logging.error(f"❌ Erro ao injetar {nome_plan} para {prof} no grid: {e}")
+
+        # ==========================================================
+        # 2.5. Insere os Planejamentos Individuais (Janela Deslizante)
+        # ==========================================================
+        if self.solver and self.plan_ind_vars:
+            for prof, slots_dict in self.plan_ind_vars.items():
+                for slot_id, var in slots_dict.items():
+                    if self.solver.Value(var) == 1:
+                        dia, aula_str = slot_id.split('_')
+                        aula = int(float(aula_str))
+                        turma_virtual = f"PLAN_IND_{prof.replace(' ', '_')}"
+                        
+                        try:
+                            grid.set(
+                                turma=turma_virtual,
+                                dia=dia,
+                                aula=aula,
+                                texto="PLANEJAMENTO",     # <--- Texto limpo na célula
+                                bloco_id="PLANEJAMENTO",   # <--- Usa o mesmo ID das reuniões para o template ocultar o prefixo da turma
+                                professor=prof,
+                            )
+                        except Exception as e:
+                            logging.error(f"❌ Erro ao injetar PLANEJAMENTO para {prof} no grid: {e}")
 
         # 3. Insere Projetos (PA e PV) automáticos (PRIORIDADE ALTA)
         if self.base:
@@ -128,7 +152,6 @@ class GridBuilder:
             
             for ativ in self.base.atividades_avulsas:
                 prof_nome = ativ.professor
-                # Tenta pegar o nome da atividade (pode estar como 'atividade' ou 'nome' na sua classe)
                 texto_ativ = getattr(ativ, 'atividade', getattr(ativ, 'nome', 'ATIVIDADE'))
                 dia = ativ.dia
                 
@@ -150,7 +173,7 @@ class GridBuilder:
                 except Exception as e:
                     logging.error(f"❌ Erro ao injetar {texto_ativ} para {prof_nome}: {e}")
 
-        # 4. PREENCHIMENTO RÍGIDO: "A DEFINIR" ATÉ ATINGIR A CH
+        # 5. PREENCHIMENTO RÍGIDO: "A DEFINIR" ATÉ ATINGIR A CH
         if self.base:
             logging.info("\n" + "="*50)
             logging.info("🔍 INICIANDO PREENCHIMENTO 'A DEFINIR' (FATOR CH)")
@@ -169,7 +192,6 @@ class GridBuilder:
                 if hasattr(self.base, 'disponibilidade') and self.base.disponibilidade:
                     indisponiveis = self.base.disponibilidade.get(prof.nome, [])
 
-                # Passo A: Mapeia exatamente o que o professor já tem na grade
                 aulas_por_dia = {d: [] for d in dias_semana}
                 ocupadas = 0
                 
@@ -191,11 +213,10 @@ class GridBuilder:
                 if deficit > 0:
                     logging.info(f"👨‍🏫 {prof.nome}: CH={ch_total}, Alocadas={ocupadas}. Preenchendo {deficit} slots...")
                     
-                    # Passo B: Classifica os slots livres por prioridade
-                    janelas_sanduiche = []  # Buracos no meio das aulas do dia (Prioridade 1)
-                    janelas_borda = []      # Logo antes da primeira ou logo após a última (Prioridade 2)
-                    outros_ativos = []      # Outros horários nos dias que ele já vai à escola (Prioridade 3)
-                    inativos = []           # Dias em que ele não tem aula nenhuma (Prioridade 4)
+                    janelas_sanduiche = []  
+                    janelas_borda = []      
+                    outros_ativos = []      
+                    inativos = []           
                     
                     for dia in dias_semana:
                         aulas_do_dia = aulas_por_dia[dia]
@@ -203,7 +224,6 @@ class GridBuilder:
                         for aula in aulas_possiveis:
                             slot_str = f"{dia}_{aula}"
                             
-                            # Se já tem aula ou está indisponível, pula
                             if aula in aulas_do_dia or slot_str in indisponiveis:
                                 continue
                                 
@@ -220,10 +240,8 @@ class GridBuilder:
                             else:
                                 inativos.append((dia, aula))
                     
-                    # Concatena a lista de tentativas na ordem correta de prioridade
                     slots_para_preencher = janelas_sanduiche + janelas_borda + outros_ativos + inativos
                     
-                    # Passo C: Injeta o "A DEFINIR" consumindo o déficit
                     for dia, aula in slots_para_preencher:
                         if deficit <= 0:
                             break
@@ -231,10 +249,10 @@ class GridBuilder:
                         turma_virtual = f"ADEF_{prof.nome.replace(' ', '_')}"    
                         try:
                             grid.set(
-                                turma=turma_virtual, # ID único para não sobrescrever ninguém!
+                                turma=turma_virtual, 
                                 dia=dia,
                                 aula=aula,
-                                texto="A DEFINIR",   # Texto real
+                                texto="A DEFINIR",   
                                 bloco_id="A_DEFINIR",
                                 professor=prof.nome
                             )
@@ -246,7 +264,5 @@ class GridBuilder:
                         logging.warning(f"  ⚠️ {prof.nome} precisava de mais {deficit} slots, mas faltou espaço físico disponível!")
 
             logging.info("="*50 + "\n")
-
-        return grid
 
         return grid

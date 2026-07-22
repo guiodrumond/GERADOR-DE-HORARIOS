@@ -25,6 +25,7 @@ from src.solver.constraints.pedagogical_pairs_constraint import PedagogicalPairs
 from src.solver.constraints.planejamento_constraint import PlanejamentoConstraint
 from src.solver.constraints.atividades_avulsas_constraint import AtividadesAvulsasConstraint
 from src.solver.constraints.max_dias_constraint import MaxDiasConstraint
+from src.solver.constraints.plan_ind_sliding_window_constraint import PlanIndSlidingWindowConstraint
 
 # Solvers e Relatórios
 from src.solver.scheduler import Scheduler
@@ -83,7 +84,12 @@ def main(input_excel: str, target_turma: str):
     MaxDiasConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars).build()
     # ==========================================
 
+    # 🪟 PASSO C: A Janela Deslizante do Planejamento Individual
+    plan_ind_window = PlanIndSlidingWindowConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars)
+    plan_ind_window.build()
+
     AtividadesAvulsasConstraint(model, variables, base).build()
+
     TeacherAvailabilityConstraint(model, variables, base).build()
     PedagogicalPairsConstraint(model=model, variables=variables, base=base).build()
     
@@ -121,10 +127,17 @@ def main(input_excel: str, target_turma: str):
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         logging.error(f"Não foi possível encontrar uma solução. STATUS: {status}")
         return
-
+    
     # 6. Relatórios
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
-    grid = GridBuilder(schedule, solver=solver, base=base, reuniao_vars=plan_constraint.reuniao_vars, variables=variables).build()
+    grid = GridBuilder(
+        schedule, 
+        solver=solver, 
+        base=base, 
+        reuniao_vars=plan_constraint.reuniao_vars, 
+        variables=variables,
+        plan_ind_vars=plan_ind_window.plan_ind_vars
+    ).build()
 
     PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
     AreaGroupingReporter(solver=solver, variables=variables, base=base).print_report()
