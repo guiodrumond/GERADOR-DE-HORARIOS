@@ -83,23 +83,23 @@ def main(input_excel: str, target_turma: str):
     plan_constraint.build()
         
     # Passo B: Cria o planejamento individual (janela deslizante)
-    plan_ind_window = PlanIndSlidingWindowConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars)
-    plan_ind_window.build()
+    # plan_ind_window = PlanIndSlidingWindowConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars)
+    # plan_ind_window.build()
         
     # Passo C: Cria as atividades avulsas (PA / PV)
     AtividadesAvulsasConstraint(model, variables, base).build()
         
     # Passo D: O JUIZ SUPREMO (Max Dias)
     # Agora ele roda por último e recebe TODAS as variáveis para somar!
-    MaxDiasConstraint(
-        model, 
-        variables, 
-        base, 
-        reuniao_vars=plan_constraint.reuniao_vars,
-        plan_ind_vars=plan_ind_window.plan_ind_vars # Passando o PI pro juiz
-    ).build()
+    # MaxDiasConstraint(
+    #     model, 
+    #     variables, 
+    #     base, 
+    #     reuniao_vars=plan_constraint.reuniao_vars,
+    #     plan_ind_vars=plan_ind_window.plan_ind_vars # Passando o PI pro juiz
+    # ).build()
         
-    TeacherAvailabilityConstraint(model, variables, base).build()
+    # TeacherAvailabilityConstraint(model, variables, base).build()
     
     objective_builder = ObjectiveBuilder(model, variables, base, regras)
 
@@ -157,7 +157,7 @@ def main(input_excel: str, target_turma: str):
         base=base, 
         reuniao_vars=plan_constraint.reuniao_vars, 
         variables=variables,
-        plan_ind_vars=plan_ind_window.plan_ind_vars
+        # plan_ind_vars=plan_ind_window.plan_ind_vars
     ).build()
 
     PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
