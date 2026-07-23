@@ -72,32 +72,36 @@ def main(input_excel: str, target_turma: str):
     BlockAssignmentConstraint(model, variables).build()
     TurmaConflictConstraint(model, variables, base).build()
     ProfessorConflictConstraint(model, variables, base).build()
+    PedagogicalPairsConstraint(model, variables, base).build()
     
-    # ==========================================
-    # CORREÇÃO DE FLUXO DE DADOS: PLANEJAMENTO E MAX_DIAS
-    # ==========================================
-    # Passo A: Cria o planejamento e guarda as variáveis geradas primeiro
+    # ==========================================================
+    # CORREÇÃO DE FLUXO DE DADOS: A HIERARQUIA CORRETA
+    # ==========================================================
+        
+    # Passo A: Cria o planejamento coletivo
     plan_constraint = PlanejamentoConstraint(model, variables, base, analise_atribuicao)
     plan_constraint.build()
-    
-    # Passo B: Agora constrói o MaxDias entregando as variáveis do planejamento para ele somar
-    MaxDiasConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars).build()
-    # ==========================================
-
-    # 🪟 PASSO C: A Janela Deslizante do Planejamento Individual
+        
+    # Passo B: Cria o planejamento individual (janela deslizante)
     plan_ind_window = PlanIndSlidingWindowConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars)
     plan_ind_window.build()
-
+        
+    # Passo C: Cria as atividades avulsas (PA / PV)
     AtividadesAvulsasConstraint(model, variables, base).build()
-
+        
+    # Passo D: O JUIZ SUPREMO (Max Dias)
+    # Agora ele roda por último e recebe TODAS as variáveis para somar!
+    MaxDiasConstraint(
+        model, 
+        variables, 
+        base, 
+        reuniao_vars=plan_constraint.reuniao_vars,
+        plan_ind_vars=plan_ind_window.plan_ind_vars # Passando o PI pro juiz
+    ).build()
+        
     TeacherAvailabilityConstraint(model, variables, base).build()
-    PedagogicalPairsConstraint(model=model, variables=variables, base=base).build()
     
-    # 4. Objetivos (Soft)
-    objective_builder = ObjectiveBuilder(model=model, variables=variables, base=base, regras=regras)
-    AreaCompactnessObjective(model=model, variables=variables, base=base, regras=regras, objective_builder=objective_builder).build()
-    TeacherCompactnessObjective(model=model, variables=variables, base=base, regras=regras, objective_builder=objective_builder).build()
-    
+    objective_builder = ObjectiveBuilder(model, variables, base, regras)
     objective_builder.build()
     objective_builder.imprimir_resumo()
 

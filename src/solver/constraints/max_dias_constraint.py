@@ -1,112 +1,126 @@
 import logging
 
 class MaxDiasConstraint:
-    def __init__(self, model, variables, base, reuniao_vars=None):
+    def __init__(self, model, variables, base, reuniao_vars=None, plan_ind_vars=None):
         self.model = model
-        self.variables = variables  # {bloco.id: {slot_id: bool_var}}
+        self.variables = variables
         self.base = base
-        self.reuniao_vars = reuniao_vars or {} # Agora recebe o dicionário real de planejamentos!
-        self.mapa_professores = self._criar_mapa_professores()
-        self.matcher = None
+        self.reuniao_vars = reuniao_vars or {}
+        self.plan_ind_vars = plan_ind_vars or {}
+
+    def _clean_slot(self, slot_str):
         try:
-            from src.domain.matchers import PlanejamentoMatcher
-            self.matcher = PlanejamentoMatcher(base)
-        except ImportError:
+            if "_" in str(slot_str):
+                d, a = str(slot_str).split("_")
+                return f"{d.strip().upper()}_{int(float(a))}"
+        except:
             pass
+        return str(slot_str).strip().upper()
 
-    def _criar_mapa_professores(self):
-        mapa = {}
-        for atribuicao in self.base.atribuicoes:
-            chave = (atribuicao.turma, atribuicao.especialidade)
-            if chave not in mapa:
-                mapa[chave] = []
-            if atribuicao.professor:
-                p_limpo = str(atribuicao.professor).strip().upper()
-                if p_limpo not in ["NONE", "NAN", "", "A DEFINIR"]:
-                    mapa[chave].append(p_limpo)
-        return mapa
-
-    def _professores_do_bloco(self, bloco):
-        professores = set()
-        for componente in bloco.componentes:
-            chave = (bloco.turma, componente)
-            for p in self.mapa_professores.get(chave, []):
-                professores.add(p)
-        return professores
-
-    def _professor_participa_planejamento(self, prof_nome, plan):
-        if not self.matcher:
-            return True
-        profs_envolvidos = set(str(p).strip().upper() for p in self.matcher.filtrar_professores(plan))
-        return prof_nome in profs_envolvidos
+    def _mapear_fantasmas(self):
+        fantasmas = {str(p.nome).strip().upper(): set() for p in self.base.professores if p.nome}
+        
+        if hasattr(self.base, 'atividades_avulsas'):
+            for ativ in self.base.atividades_avulsas:
+                p_nome = str(ativ.professor).strip().upper()
+                if p_nome in fantasmas:
+                    dia = str(ativ.dia).strip().upper()
+                    fantasmas[p_nome].add(dia)
+                    
+        projetos = {}
+        for rest in self.base.restricoes:
+            if rest.regra.startswith("PA_") or rest.regra.startswith("PV_"):
+                partes = rest.regra.split("_")
+                ano, prop = str(partes[1]), "_".join(partes[2:])
+                if ano not in projetos: projetos[ano] = {}
+                projetos[ano][prop] = rest.valor
+                
+        for prof in self.base.professores:
+            p_nome = str(prof.nome).strip().upper()
+            if p_nome not in fantasmas or not prof.anos_atuacao: continue
+            anos_prof = [a.strip()[:-2] if a.strip().endswith(".0") else a.strip() for a in str(prof.anos_atuacao).split(",")]
+            for ano in anos_prof:
+                if ano in projetos:
+                    dia = str(projetos[ano].get("DIA", "")).strip().upper()
+                    if dia: fantasmas[p_nome].add(dia)
+        return fantasmas
 
     def build(self):
-        logging.info("Construindo restrição definitiva de Max Dias (Aulas + Planejamentos reais)...")
-        
-        limites_dias = {}
+        logging.info("⚖️ Construindo Restrição Definitiva de Max Dias (Blindada e Revisada)...")
+        fantasmas_por_prof = self._mapear_fantasmas()
+
+        # ==============================================================
+        # CORREÇÃO: MAPEIA AS REUNIÕES DE FORMA SEGURA USANDO O MATCHER
+        # ==============================================================
+        prof_reuniao_vars = {str(p.nome).strip().upper(): [] for p in self.base.professores if p.nome}
+        try:
+            from src.domain.matchers import PlanejamentoMatcher
+            matcher = PlanejamentoMatcher(self.base)
+            for nome_plan, slots_dict in self.reuniao_vars.items():
+                plan = next((pl for pl in self.base.planejamentos if pl.nome == nome_plan), None)
+                if not plan: continue
+                profs_env = set(str(pr).strip().upper() for pr in matcher.filtrar_professores(plan))
+                
+                for p_nome in prof_reuniao_vars.keys():
+                    if p_nome in profs_env:
+                        for raw_slot, var_plan in slots_dict.items():
+                            prof_reuniao_vars[p_nome].append((self._clean_slot(raw_slot), var_plan))
+        except Exception as e:
+            logging.error(f"Erro ao mapear planejamento coletivo no Max Dias: {e}")
+
         for prof in self.base.professores:
-            if prof.nome:
-                p_nome = str(prof.nome).strip().upper()
-                try:
-                    limites_dias[p_nome] = int(float(prof.max_dias))
-                except (ValueError, TypeError):
-                    limites_dias[p_nome] = 5
+            if not prof.nome: continue
+            p_nome = str(prof.nome).strip().upper()
+            
+            try:
+                max_dias = int(float(prof.max_dias))
+            except:
+                continue
 
-        if not limites_dias:
-            return
+            if max_dias >= 5: continue
 
-        prof_dias_vars = {}
-        for prof in limites_dias.keys():
-            prof_dias_vars[prof] = {}
-            for slot in self.base.slots:
-                dia = str(slot.dia).strip().upper()
-                if dia not in prof_dias_vars[prof]:
-                    prof_dias_vars[prof][dia] = []
-
-        # 1. Coleta Aulas Normais (Regência)
-        for bloco in self.base.blocos:
-            profs_bloco = self._professores_do_bloco(bloco)
-            for p in profs_bloco:
-                if p not in prof_dias_vars:
-                    continue
-                for slot_inicio_id, var_bloco in self.variables.get(bloco.id, {}).items():
-                    dia_inicio = slot_inicio_id.split("_")[0].strip().upper()
-                    if dia_inicio in prof_dias_vars[p]:
-                        prof_dias_vars[p][dia_inicio].append(var_bloco)
-
-        # 2. Coleta Planejamentos Coletivos (Usando a base real de variáveis da sua restrição)
-        for nome_plan, slots_dict in self.reuniao_vars.items():
-            plan = next((p for p in self.base.planejamentos if p.nome == nome_plan), None)
-            if not plan: continue
-
-            for slot_id, var_plan in slots_dict.items():
-                dia_inicio = slot_id.split("_")[0].strip().upper()
+            dias_trabalhados = []
+            
+            for dia in ["SEG", "TER", "QUA", "QUI", "SEX"]:
+                atividades_neste_dia = []
                 
-                for p in prof_dias_vars.keys():
-                    if self._professor_participa_planejamento(p, plan):
-                        if dia_inicio in prof_dias_vars[p]:
-                            prof_dias_vars[p][dia_inicio].append(var_plan)
+                # 1. Aulas Normais
+                for bloco in self.base.blocos:
+                    match = False
+                    if hasattr(bloco, 'professor') and str(bloco.professor).strip().upper() == p_nome:
+                        match = True
+                    else:
+                        for atr in self.base.atribuicoes:
+                            if str(atr.turma) == str(bloco.turma) and atr.professor and str(atr.professor).strip().upper() == p_nome:
+                                esp_prof = str(atr.especialidade).strip().upper()
+                                if esp_prof in str(bloco.id).upper() or any(comp.strip().upper() == esp_prof or comp.strip().upper() in esp_prof or esp_prof in comp.strip().upper() for comp in getattr(bloco, 'componentes', [])):
+                                    match = True
+                                    break
+                    if match:
+                        for slot_id, var_bloco in self.variables.get(bloco.id, {}).items():
+                            c_id = self._clean_slot(slot_id)
+                            if c_id.startswith(dia):
+                                atividades_neste_dia.append(var_bloco)
 
-        # 3. Restrição Final
-        dias_disponiveis = sorted(list({str(s.dia).strip().upper() for s in self.base.slots}))
+                # 2. Planejamento Coletivo (Agora puxado pela chave corrigida!)
+                for slot_id, var_plan in prof_reuniao_vars.get(p_nome, []):
+                    if slot_id.startswith(dia):
+                        atividades_neste_dia.append(var_plan)
+                        
+                # 3. Planejamento Individual
+                for slot_id, var_pi in self.plan_ind_vars.get(p_nome, {}).items():
+                    c_id = self._clean_slot(slot_id)
+                    if c_id.startswith(dia):
+                        atividades_neste_dia.append(var_pi)
 
-        for prof, max_permitido in limites_dias.items():
-            dias_trabalhados_booleans = []
+                # 4. Avalia e Trava o dia
+                if dia in fantasmas_por_prof.get(p_nome, set()):
+                    dias_trabalhados.append(1)
+                elif atividades_neste_dia:
+                    dia_ativo = self.model.NewBoolVar(f"dia_ativo_{p_nome}_{dia}")
+                    self.model.AddMaxEquality(dia_ativo, atividades_neste_dia)
+                    dias_trabalhados.append(dia_ativo)
 
-            for dia in dias_disponiveis:
-                vars_do_dia = prof_dias_vars.get(prof, {}).get(dia, [])
-                if not vars_do_dia:
-                    continue
-
-                trab_no_dia = self.model.NewBoolVar(f"trab_{prof}_{dia}")
-                soma_ativ_dia = sum(vars_do_dia)
-                max_possivel = len(vars_do_dia)
-                
-                self.model.Add(soma_ativ_dia <= trab_no_dia * max_possivel)
-                self.model.Add(soma_ativ_dia >= trab_no_dia)
-
-                dias_trabalhados_booleans.append(trab_no_dia)
-
-            if dias_trabalhados_booleans:
-                self.model.Add(sum(dias_trabalhados_booleans) <= max_permitido)
-                logging.info(f"👤 Prof: {prof:<20} | Max Dias: {max_permitido} | Restrição injetada.")
+            if dias_trabalhados:
+                self.model.Add(sum(dias_trabalhados) <= max_dias)
+                logging.info(f"   👤 Prof: {p_nome} | Max Dias: {max_dias} | Juiz aplicou a trava total (Com Plan Coletivo atrelado!).")
