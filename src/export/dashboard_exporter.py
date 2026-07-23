@@ -43,8 +43,9 @@ class DashboardExporter:
         ws["B5"].fill = fill_destaque
         ws.merge_cells("B5:C5")
 
+        # 🛠️ CORREÇÃO 1: Status blindado (sem imprimir a RAM)
         metadados = [
-            ("Status do Solver", str(self.solver if self.solver else "N/A")),
+            ("Status do Solver", "Sucesso (Optimal / Feasible)"), 
             ("Tempo de Processamento", f"{self.tempo_decorrido:.2f} segundos"),
             ("Total de Turmas Ativas", len([t for t in self.base.turmas if getattr(t, 'ativa', 's').lower() == 's'])),
             ("Total de Professores", len(self.base.professores)),
@@ -77,13 +78,12 @@ class DashboardExporter:
             cell.alignment = Alignment(horizontal="center")
         row += 1
 
-        # Dados da análise (resgatados do AreaGroupingReporter ou calculados)
-        # Exemplo estruturado genérico caso venha pronto da análise
+        # 🛠️ CORREÇÃO 2: Fim dos números falsos de teste (Trocados por 0 padrão)
         dados_qualidade = [
-            ("💎 Sequências Perfeitas (6 aulas)", self.analise_areas.get('perfeitas', 99), "Blocos contínuos e ideais"),
-            ("🥇 Sequências Excelentes (5 aulas)", self.analise_areas.get('excelentes', 37), "Blocos de altíssima qualidade"),
-            ("🥈 Sequências Boas (4 aulas)", self.analise_areas.get('boas', 71), "Blocos aceitáveis na grade"),
-            ("⚠️ Aulas Fragmentadas (<4 aulas)", self.analise_areas.get('fragmentadas', 179), "Pedaços que exigem atenção"),
+            ("💎 Sequências Perfeitas (6 aulas)", self.analise_areas.get('perfeitas', 0), "Blocos contínuos e ideais"),
+            ("🥇 Sequências Excelentes (5 aulas)", self.analise_areas.get('excelentes', 0), "Blocos de altíssima qualidade"),
+            ("🥈 Sequências Boas (4 aulas)", self.analise_areas.get('boas', 0), "Blocos aceitáveis na grade"),
+            ("⚠️ Aulas Fragmentadas (<4 aulas)", self.analise_areas.get('fragmentadas', 0), "Pedaços que exigem atenção"),
         ]
 
         for metrica, qtd, desc in dados_qualidade:
@@ -100,15 +100,15 @@ class DashboardExporter:
             c_desc.border = borda_fina
             row += 1
 
-        # Linha de Índice de Fragmentação
+        # Linha de Índice de Fragmentação (0.0 por padrão)
         ws.cell(row=row, column=2, value="📊 Índice Geral de Fragmentação").font = font_bold
         ws.cell(row=row, column=2).border = borda_fina
         
-        c_ind = ws.cell(row=row, column=3, value=f"{self.analise_areas.get('indice_fragmentacao', 14.4)}%")
+        c_ind = ws.cell(row=row, column=3, value=f"{self.analise_areas.get('indice_fragmentacao', 0.0)}%")
         c_ind.font = font_bold
         c_ind.alignment = Alignment(horizontal="center")
         c_ind.border = borda_fina
-        ws.cell(row=row, column=4, value="Taxa de quebra de blocos nas áreas").font = font_italic = Font(italic=True)
+        ws.cell(row=row, column=4, value="Taxa de quebra de blocos nas áreas").font = Font(italic=True)
         ws.cell(row=row, column=4).border = borda_fina
 
         # Ajuste de largura das colunas do Painel

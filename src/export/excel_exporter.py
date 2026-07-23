@@ -4,10 +4,11 @@ from src.export.excel_styles import ExcelStyles
 from src.export.dashboard_exporter import DashboardExporter
 
 class ExcelExporter:
-    def __init__(self, base, solver=None, tempo_decorrido=0.0):
+    def __init__(self, base, solver=None, tempo_decorrido=0.0, analise_areas=None):
         self.base = base
         self.solver = solver
         self.tempo_decorrido = tempo_decorrido
+        self.analise_areas = analise_areas
         
         # Mapas auxiliares para cruzar siglas, áreas e professores
         self.componente_para_grupo = self._criar_mapa_componente_grupo()
@@ -23,11 +24,7 @@ class ExcelExporter:
 
         # 1. Cria a Aba de Painel / Resumo na primeira posição (Índice 0)
         sheet_dashboard = workbook.create_sheet(title="RESUMO", index=0)
-        dashboard = DashboardExporter(
-            base=self.base, 
-            solver=self.solver, 
-            tempo_decorrido=self.tempo_decorrido
-        )
+        dashboard = DashboardExporter(base=self.base, solver=self.solver, tempo_decorrido=self.tempo_decorrido, analise_areas=self.analise_areas)
         dashboard.export(sheet_dashboard)
 
         # 2. Cria as demais abas de horários

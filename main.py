@@ -102,6 +102,23 @@ def main(input_excel: str, target_turma: str):
     TeacherAvailabilityConstraint(model, variables, base).build()
     
     objective_builder = ObjectiveBuilder(model, variables, base, regras)
+
+    AreaCompactnessObjective(
+        model=model, 
+        variables=variables, 
+        base=base, 
+        regras=regras, 
+        objective_builder=objective_builder
+    ).build()
+
+    TeacherCompactnessObjective(
+        model=model, 
+        variables=variables, 
+        base=base, 
+        regras=regras, 
+        objective_builder=objective_builder
+    ).build()
+
     objective_builder.build()
     objective_builder.imprimir_resumo()
 
@@ -144,7 +161,13 @@ def main(input_excel: str, target_turma: str):
     ).build()
 
     PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
-    AreaGroupingReporter(solver=solver, variables=variables, base=base).print_report()
+    
+    # 🔥 CORREÇÃO: Salva a classe na variável e capta os números do terminal
+    area_reporter = AreaGroupingReporter(solver=solver, variables=variables, base=base)
+    area_reporter.print_report()
+    
+    # Extrai os dados para o painel do Excel (com trava de segurança caso o método ainda não exista)
+    estatisticas = area_reporter.get_stats() if hasattr(area_reporter, 'get_stats') else {}
         
     print(f"\n===== AMOSTRA DE HORÁRIO: {target_turma} =====")
     GridPrinter.print_turma(grid, target_turma)
@@ -157,7 +180,8 @@ def main(input_excel: str, target_turma: str):
     caminho_saida = f"outputs/horario_gerado_{timestamp}.xlsx"
 
     try:
-        exporter = ExcelExporter(base=base, solver=solver, tempo_decorrido=tempo_decorrido) 
+        # 🔥 A MÁGICA: Passa as 'estatisticas' capturadas direto para o Exporter!
+        exporter = ExcelExporter(base=base, solver=solver, tempo_decorrido=tempo_decorrido, analise_areas=estatisticas) 
         exporter.export(grid=grid, caminho_saida=caminho_saida)
         logging.info(f"✅ Arquivo Excel exportado com sucesso: {caminho_saida}!")
     except Exception as e:

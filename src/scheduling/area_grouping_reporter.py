@@ -15,6 +15,10 @@ class AreaGroupingReporter:
             "CNST": ["FIS", "QUI", "BIO"],
             "CHSA": ["GEO", "FIL", "HIS", "SOC"]
         }
+        
+        # Variáveis de classe para guardar os dados e enviar para o Excel depois
+        self.stats = {"6+": 0, "5": 0, "4": 0, "fragmentadas (<4)": 0}
+        self.indice_fragmentacao = 0.0
 
     def print_report(self):
         print("\n" + "="*80)
@@ -54,7 +58,7 @@ class AreaGroupingReporter:
                         grade[turma][dia][aula_int + i] = area_deste_bloco
 
         # 2. Contabilizar os blocos contínuos REAIS
-        stats = {"6+": 0, "5": 0, "4": 0, "fragmentadas (<4)": 0}
+        self.stats = {"6+": 0, "5": 0, "4": 0, "fragmentadas (<4)": 0} # Zera antes de contar
         
         for turma, dias in grade.items():
             for dia, aulas_dict in dias.items():
@@ -67,36 +71,39 @@ class AreaGroupingReporter:
                     
                     if area_nesta_aula is None:
                         if area_atual is not None:
-                            self._registrar_stats(stats, tamanho_sequencia)
+                            self._registrar_stats(self.stats, tamanho_sequencia)
                         area_atual = None
                         tamanho_sequencia = 0
                     elif area_nesta_aula == area_atual:
                         tamanho_sequencia += 1
                     else:
                         if area_atual is not None:
-                            self._registrar_stats(stats, tamanho_sequencia)
+                            self._registrar_stats(self.stats, tamanho_sequencia)
                         area_atual = area_nesta_aula
                         tamanho_sequencia = 1
                         
                 # Registra o que sobrou no final do dia
                 if area_atual is not None:
-                    self._registrar_stats(stats, tamanho_sequencia)
+                    self._registrar_stats(self.stats, tamanho_sequencia)
 
         # 3. Imprimir o Dashboard
-        total_aulas_avaliadas = (stats["6+"]*6) + (stats["5"]*5) + (stats["4"]*4) + stats["fragmentadas (<4)"]
+        total_aulas_avaliadas = (self.stats["6+"]*6) + (self.stats["5"]*5) + (self.stats["4"]*4) + self.stats["fragmentadas (<4)"]
         
         print(f"🎯 Total de Sequências de LEST, CNST e CHSA encontradas na Escola:")
-        print(f"  💎 Sequências Perfeitas (6 aulas):  {stats['6+']} blocos")
-        print(f"  🥇 Sequências Excelentes (5 aulas): {stats['5']} blocos")
-        print(f"  🥈 Sequências Boas (4 aulas):       {stats['4']} blocos")
-        print(f"  ⚠️ Aulas Fragmentadas (<4 aulas):   {stats['fragmentadas (<4)']} pedaços")
+        print(f"  💎 Sequências Perfeitas (6 aulas):  {self.stats['6+']} blocos")
+        print(f"  🥇 Sequências Excelentes (5 aulas): {self.stats['5']} blocos")
+        print(f"  🥈 Sequências Boas (4 aulas):       {self.stats['4']} blocos")
+        print(f"  ⚠️ Aulas Fragmentadas (<4 aulas):   {self.stats['fragmentadas (<4)']} pedaços")
         print("-" * 80)
         
         if total_aulas_avaliadas > 0:
-            fragmentacao = (stats['fragmentadas (<4)'] / total_aulas_avaliadas) * 100
-            print(f"📊 ÍNDICE DE FRAGMENTAÇÃO DAS ÁREAS: {fragmentacao:.1f}%")
-            if fragmentacao == 0:
+            self.indice_fragmentacao = (self.stats['fragmentadas (<4)'] / total_aulas_avaliadas) * 100
+            print(f"📊 ÍNDICE DE FRAGMENTAÇÃO DAS ÁREAS: {self.indice_fragmentacao:.1f}%")
+            if self.indice_fragmentacao == 0:
                 print("   🏆 ESTADO DA ARTE! Nenhuma aula de área solta no currículo!")
+        else:
+            self.indice_fragmentacao = 0.0
+            
         print("="*80 + "\n")
 
     def _registrar_stats(self, stats, tamanho):
@@ -109,3 +116,15 @@ class AreaGroupingReporter:
             stats["4"] += 1
         elif tamanho > 0:
             stats["fragmentadas (<4)"] += tamanho # Conta quantas aulas ficaram soltas
+
+    def get_stats(self):
+        """
+        Retorna o dicionário formatado para o ExcelExporter consumir as métricas reais.
+        """
+        return {
+            'perfeitas': self.stats.get("6+", 0),
+            'excelentes': self.stats.get("5", 0),
+            'boas': self.stats.get("4", 0),
+            'fragmentadas': self.stats.get("fragmentadas (<4)", 0),
+            'indice_fragmentacao': round(self.indice_fragmentacao, 1)
+        }
