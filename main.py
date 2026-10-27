@@ -1,13 +1,12 @@
 import argparse
 import logging
-from pathlib import Path
-from datetime import datetime
 import threading
 import time
-from tqdm import tqdm
-from ortools.sat.python import cp_model
+from datetime import datetime
 
-# Importações principais
+from ortools.sat.python import cp_model
+from tqdm import tqdm
+
 from src.data.loader import ExcelLoader
 from src.data.validators import BaseDadosValidator
 from src.data.analyzer import PedagogicalPairsAnalyzer
@@ -16,7 +15,6 @@ from src.solver.variables import DecisionVariableBuilder
 from src.solver.rules.parser import RuleParser
 from src.solver.rules.engine import RuleEngine
 
-# Restrições
 from src.solver.constraints.block_assignment_constraint import BlockAssignmentConstraint
 from src.solver.constraints.class_conflict_constraint import TurmaConflictConstraint
 from src.solver.constraints.professor_conflict_constraint import ProfessorConflictConstraint
@@ -27,7 +25,6 @@ from src.solver.constraints.atividades_avulsas_constraint import AtividadesAvuls
 from src.solver.constraints.max_dias_constraint import MaxDiasConstraint
 from src.solver.constraints.plan_ind_sliding_window_constraint import PlanIndSlidingWindowConstraint
 
-# Solvers e Relatórios
 from src.solver.scheduler import Scheduler
 from src.scheduling.schedule_builder import ScheduleBuilder
 from src.scheduling.grid_builder import GridBuilder
@@ -36,98 +33,192 @@ from src.export.excel_exporter import ExcelExporter
 from src.solver.objectives.objective_builder import ObjectiveBuilder
 from src.solver.objectives.area_compactness_objective import AreaCompactnessObjective
 from src.solver.objectives.teacher_compactness_objective import TeacherCompactnessObjective
-from src.solver.planning.planning_window_builder import PlanningWindowBuilder
-from src.solver.planning.planning_variables import PlanningVariables
-from src.solver.planning.teacher_availability_builder import TeacherAvailabilityBuilder
-from src.solver.planning.planning_result_builder import PlanningResultBuilder
 from src.scheduling.pedagogical_reporter import PedagogicalPairsReporter
 from src.scheduling.area_grouping_reporter import AreaGroupingReporter
+from src.solver.diagnostics.preflight_validator import PreflightValidator
+
+
+# ==========================================================
+# PAINEL DE CAMADAS (LIGA / DESLIGA)
+# ==========================================================
+
+CAMADAS = {
+    # Diagnóstico
+    "PREFLIGHT": True,
+
+    # Restrições rígidas
+    "RULE_ENGINE": True,
+    "CONFLITO_TURMA": True,
+    "CONFLITO_PROFESSOR": True,
+    "PARES_PEDAGOGICOS": True,
+    "DISPONIBILIDADE": True,
+    "PLANEJAMENTO_COLETIVO": False,
+    "PLANEJAMENTO_INDIVIDUAL": True,
+    "ATIVIDADES_AVULSAS": True,
+    "MAX_DIAS": True,
+
+    # Objetivos
+    "OBJ_COMPACTACAO_AREAS": True,
+    "OBJ_COMPACTACAO_PROFESSORES": True,
+}
+
+# None = usa o tempo da planilha. Ex.: 600 para testes de 10 minutos.
+TEMPO_MAX_TESTE = None
+
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-def main(input_excel: str, target_turma: str):
-    logging.info("===== INICIANDO GERADOR DE HORÁRIOS =====")
 
-    # 1. Carregamento
+def ativa(nome):
+    return CAMADAS.get(nome, False)
+
+
+def log_camadas():
+    logging.info("=" * 60)
+    logging.info("🎛️ CAMADAS DO MODELO")
+    logging.info("=" * 60)
+    for nome, ligada in CAMADAS.items():
+        logging.info(f"   {'🟢 ON ' if ligada else '🔴 OFF'} | {nome}")
+    if TEMPO_MAX_TESTE:
+        logging.info(f"   ⏱️ Tempo máximo de teste: {TEMPO_MAX_TESTE}s")
+    logging.info("=" * 60)
+
+
+def main(input_excel: str, target_turma: str):
+
+    logging.info("===== INICIANDO GERADOR DE HORÁRIOS =====")
+    log_camadas()
+
+    # ======================================================
+    # 1. CARREGAMENTO
+    # ======================================================
+
     loader = ExcelLoader(input_excel)
     base = loader.load()
-    loader.load_disponibilidade(base, input_excel) # Carrega a aba DISPONIBILIDADE
-    
+    loader.load_disponibilidade(base, input_excel)
+
     BaseDadosValidator(base).validate()
-    
-    analyzer = PedagogicalPairsAnalyzer(base)
-    analise_atribuicao = analyzer.analisar()
-    
-    # 2. Construção
+
+    # ======================================================
+    # 2. PREFLIGHT
+    # ======================================================
+
+    if ativa("PREFLIGHT"):
+
+        preflight = PreflightValidator(base=base)
+        problemas = preflight.validate()
+        preflight.log_report()
+
+        if problemas:
+            logging.error("❌ Pré-validação falhou. O solver não será executado.")
+            return
+
+    analise_atribuicao = PedagogicalPairsAnalyzer(base).analisar()
+
+    # ======================================================
+    # 3. CONSTRUÇÃO DO MODELO
+    # ======================================================
+
     base.blocos = PedagogicalBlockBuilder(base).build()
     regras = RuleParser().parse(base.restricoes)
     model, variables = DecisionVariableBuilder(base).build()
 
-    # 3. Disponibilidade e Restrições
-    planning_windows = PlanningWindowBuilder(base=base, tamanho_janela=2).build()
-    planning_variables = PlanningVariables(model=model, planning_windows=planning_windows, base=base).build()
-    
-    # Restrições Hard Base
-    RuleEngine(model=model, variables=variables, base=base, regras=regras).build()
+    # ======================================================
+    # 4. RESTRIÇÕES RÍGIDAS
+    # ======================================================
+
+    # Base obrigatória: sem ela não existe horário
     BlockAssignmentConstraint(model, variables).build()
-    TurmaConflictConstraint(model, variables, base).build()
-    ProfessorConflictConstraint(model, variables, base).build()
-    PedagogicalPairsConstraint(model, variables, base).build()
-    
-    # ==========================================================
-    # CORREÇÃO DE FLUXO DE DADOS: A HIERARQUIA CORRETA
-    # ==========================================================
-        
-    # Passo A: Cria o planejamento coletivo
-    plan_constraint = PlanejamentoConstraint(model, variables, base, analise_atribuicao)
-    plan_constraint.build()
-        
-    # Passo B: Cria o planejamento individual (janela deslizante)
-    plan_ind_window = PlanIndSlidingWindowConstraint(model, variables, base, reuniao_vars=plan_constraint.reuniao_vars)
-    plan_ind_window.build()
-        
-    # Passo C: Cria as atividades avulsas (PA / PV)
-    AtividadesAvulsasConstraint(model, variables, base).build()
-        
-    # Passo D: O JUIZ SUPREMO (Max Dias)
-    # Agora ele roda por último e recebe TODAS as variáveis para somar!
-    MaxDiasConstraint(
-        model, 
-        variables, 
-        base, 
-        reuniao_vars=plan_constraint.reuniao_vars,
-        plan_ind_vars=plan_ind_window.plan_ind_vars # Passando o PI pro juiz
-    ).build()
-        
-    TeacherAvailabilityConstraint(model, variables, base).build()
-    
+
+    if ativa("RULE_ENGINE"):
+        RuleEngine(model=model, variables=variables, base=base, regras=regras).build()
+
+    if ativa("CONFLITO_TURMA"):
+        TurmaConflictConstraint(model, variables, base).build()
+
+    if ativa("CONFLITO_PROFESSOR"):
+        ProfessorConflictConstraint(model, variables, base).build()
+
+    if ativa("PARES_PEDAGOGICOS"):
+        PedagogicalPairsConstraint(model, variables, base).build()
+
+    reuniao_vars = {}
+    plan_ind_vars = {}
+
+    if ativa("PLANEJAMENTO_COLETIVO"):
+        plan_constraint = PlanejamentoConstraint(model, variables, base, analise_atribuicao)
+        plan_constraint.build()
+        reuniao_vars = plan_constraint.reuniao_vars
+
+    if ativa("PLANEJAMENTO_INDIVIDUAL"):
+        plan_ind_window = PlanIndSlidingWindowConstraint(
+            model, variables, base, reuniao_vars=reuniao_vars
+        )
+        plan_ind_window.build()
+        plan_ind_vars = plan_ind_window.plan_ind_vars
+
+    if ativa("ATIVIDADES_AVULSAS"):
+        AtividadesAvulsasConstraint(model, variables, base).build()
+
+    if ativa("MAX_DIAS"):
+        MaxDiasConstraint(
+            model,
+            variables,
+            base,
+            reuniao_vars=reuniao_vars,
+            plan_ind_vars=plan_ind_vars,
+        ).build()
+
+    if ativa("DISPONIBILIDADE"):
+        TeacherAvailabilityConstraint(model, variables, base).build()
+
+    # ======================================================
+    # 5. OBJETIVOS
+    # ======================================================
+
     objective_builder = ObjectiveBuilder(model, variables, base, regras)
 
-    AreaCompactnessObjective(
-        model=model, 
-        variables=variables, 
-        base=base, 
-        regras=regras, 
-        objective_builder=objective_builder
-    ).build()
+    if ativa("OBJ_COMPACTACAO_AREAS"):
+        AreaCompactnessObjective(
+            model=model,
+            variables=variables,
+            base=base,
+            regras=regras,
+            objective_builder=objective_builder,
+        ).build()
 
-    TeacherCompactnessObjective(
-        model=model, 
-        variables=variables, 
-        base=base, 
-        regras=regras, 
-        objective_builder=objective_builder
-    ).build()
+    if ativa("OBJ_COMPACTACAO_PROFESSORES"):
+        TeacherCompactnessObjective(
+            model=model,
+            variables=variables,
+            base=base,
+            regras=regras,
+            objective_builder=objective_builder,
+        ).build()
 
-    objective_builder.build()
-    objective_builder.imprimir_resumo()
+    if ativa("OBJ_COMPACTACAO_AREAS") or ativa("OBJ_COMPACTACAO_PROFESSORES"):
+        objective_builder.build()
+        objective_builder.imprimir_resumo()
+    else:
+        logging.info("🎯 Nenhum objetivo ativo: o solver buscará apenas um horário válido.")
 
-    # 5. Solver com Animação de Cronômetro e Medição de Tempo
-    logging.info("Executando Solver...")
-    scheduler = Scheduler(model, config=getattr(base, 'config', {}))
+    # ======================================================
+    # 6. SOLVER
+    # ======================================================
+
+    config = dict(getattr(base, "config", {}) or {})
+
+    if TEMPO_MAX_TESTE:
+        config["MAX_TIME_SECONDS"] = TEMPO_MAX_TESTE
+
+    scheduler = Scheduler(model, config=config)
 
     def rodar_animacao(evento):
-        with tqdm(total=0, desc="🧠 O Solver está pensando", bar_format="{desc} | ⏳ Tempo decorrido: {elapsed}") as pbar:
+        with tqdm(
+            total=0,
+            desc="🧠 O Solver está pensando",
+            bar_format="{desc} | ⏳ Tempo decorrido: {elapsed}",
+        ) as pbar:
             while not evento.is_set():
                 time.sleep(1)
                 pbar.update(1)
@@ -136,58 +227,74 @@ def main(input_excel: str, target_turma: str):
     t_animacao = threading.Thread(target=rodar_animacao, args=(parar_evento,))
     t_animacao.start()
 
-    inicio_tempo = time.time()
+    inicio = time.time()
+
     try:
         solver, status = scheduler.solve()
     finally:
         parar_evento.set()
         t_animacao.join()
-    fim_tempo = time.time()
-    tempo_decorrido = fim_tempo - inicio_tempo
+
+    tempo_decorrido = time.time() - inicio
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         logging.error(f"Não foi possível encontrar uma solução. STATUS: {status}")
+        logging.error(
+            "Camadas desligadas neste teste: "
+            + (", ".join(n for n, v in CAMADAS.items() if not v) or "nenhuma")
+        )
         return
-    
-    # 6. Relatórios
+
+    logging.info(f"✅ Solução encontrada ({status}) em {tempo_decorrido:.1f}s")
+
+    # ======================================================
+    # 7. RELATÓRIOS E EXPORTAÇÃO
+    # ======================================================
+
     schedule = ScheduleBuilder(base=base, variables=variables, solver=solver).build()
+
     grid = GridBuilder(
-        schedule, 
-        solver=solver, 
-        base=base, 
-        reuniao_vars=plan_constraint.reuniao_vars, 
+        schedule,
+        solver=solver,
+        base=base,
+        reuniao_vars=reuniao_vars,
         variables=variables,
-        # plan_ind_vars=plan_ind_window.plan_ind_vars
     ).build()
 
-    PedagogicalPairsReporter(solver=solver, variables=variables, base=base, analise_previa=analise_atribuicao).print_report()
-    
-    # 🔥 CORREÇÃO: Salva a classe na variável e capta os números do terminal
+    PedagogicalPairsReporter(
+        solver=solver,
+        variables=variables,
+        base=base,
+        analise_previa=analise_atribuicao,
+    ).print_report()
+
     area_reporter = AreaGroupingReporter(solver=solver, variables=variables, base=base)
     area_reporter.print_report()
-    
-    # Extrai os dados para o painel do Excel (com trava de segurança caso o método ainda não exista)
-    estatisticas = area_reporter.get_stats() if hasattr(area_reporter, 'get_stats') else {}
-        
+
+    estatisticas = area_reporter.get_stats() if hasattr(area_reporter, "get_stats") else {}
+
     print(f"\n===== AMOSTRA DE HORÁRIO: {target_turma} =====")
     GridPrinter.print_turma(grid, target_turma)
-        
-    # ==========================================
-    # EXPORTAÇÃO COM PAINEL E TIMESTAMP
-    # ==========================================
-    logging.info("Exportando o horário gerado para Excel...")
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     caminho_saida = f"outputs/horario_gerado_{timestamp}.xlsx"
 
     try:
-        # 🔥 A MÁGICA: Passa as 'estatisticas' capturadas direto para o Exporter!
-        exporter = ExcelExporter(base=base, solver=solver, tempo_decorrido=tempo_decorrido, analise_areas=estatisticas) 
-        exporter.export(grid=grid, caminho_saida=caminho_saida)
-        logging.info(f"✅ Arquivo Excel exportado com sucesso: {caminho_saida}!")
-    except Exception as e:
-        logging.error(f"Erro crítico ao tentar exportar o Excel: {e}")
+        ExcelExporter(
+            base=base,
+            solver=solver,
+            tempo_decorrido=tempo_decorrido,
+            analise_areas=estatisticas,
+        ).export(grid=grid, caminho_saida=caminho_saida)
 
-    logging.info("Processo finalizado com sucesso.")
+        logging.info(f"✅ Arquivo Excel exportado: {caminho_saida}")
+
+    except Exception:
+        logging.exception("Erro crítico ao exportar o Excel.")
+        return
+
+    logging.info("===== PROCESSO FINALIZADO COM SUCESSO =====")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
