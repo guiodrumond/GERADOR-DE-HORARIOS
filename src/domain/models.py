@@ -205,6 +205,7 @@ class Planejamento:
     area: Optional[str] = None
     componente: Optional[str] = None
     especialidade: Optional[str] = None
+    grupo: Optional[str] = None
 
 @dataclass(frozen=True)
 class AtividadeAvulsa:

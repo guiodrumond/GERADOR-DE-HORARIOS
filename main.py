@@ -36,7 +36,8 @@ from src.solver.objectives.teacher_compactness_objective import TeacherCompactne
 from src.scheduling.pedagogical_reporter import PedagogicalPairsReporter
 from src.scheduling.area_grouping_reporter import AreaGroupingReporter
 from src.solver.diagnostics.preflight_validator import PreflightValidator
-
+from src.solver.diagnostics.planning_diagnostics import PlanningDiagnostics
+from src.solver.diagnostics.planning_mapper import PlanningMapper
 
 # ==========================================================
 # PAINEL DE CAMADAS (LIGA / DESLIGA)
@@ -45,6 +46,7 @@ from src.solver.diagnostics.preflight_validator import PreflightValidator
 CAMADAS = {
     # Diagnóstico
     "PREFLIGHT": True,
+    "DIAG_PLANEJAMENTO": True,
 
     # Restrições rígidas
     "RULE_ENGINE": True,
@@ -52,10 +54,11 @@ CAMADAS = {
     "CONFLITO_PROFESSOR": True,
     "PARES_PEDAGOGICOS": True,
     "DISPONIBILIDADE": True,
-    "PLANEJAMENTO_COLETIVO": False,
+    "PLANEJAMENTO_COLETIVO": True,
     "PLANEJAMENTO_INDIVIDUAL": True,
     "ATIVIDADES_AVULSAS": True,
     "MAX_DIAS": True,
+    "MAPA_PLANEJAMENTO": True,
 
     # Objetivos
     "OBJ_COMPACTACAO_AREAS": True,
@@ -120,6 +123,25 @@ def main(input_excel: str, target_turma: str):
     # ======================================================
 
     base.blocos = PedagogicalBlockBuilder(base).build()
+
+    #Mapeamento dos planejamentos coletivos
+    if ativa("MAPA_PLANEJAMENTO"):
+
+        reunioes_cabem = PlanningMapper(base).run()
+
+        if not reunioes_cabem and ativa("PLANEJAMENTO_COLETIVO"):
+            logging.error("❌ As reuniões não cabem nem sozinhas. O solver principal não será executado.")
+            return    
+
+    # Diagnóstico de planejamento (roda mesmo com a camada desligada)
+    if ativa("DIAG_PLANEJAMENTO"):
+
+        impossiveis = PlanningDiagnostics(base).log_pre_solver()
+
+        if impossiveis and ativa("PLANEJAMENTO_COLETIVO"):
+            logging.error("❌ Planejamento impossível. O solver não será executado.")
+            return
+
     regras = RuleParser().parse(base.restricoes)
     model, variables = DecisionVariableBuilder(base).build()
 
@@ -246,6 +268,10 @@ def main(input_excel: str, target_turma: str):
         return
 
     logging.info(f"✅ Solução encontrada ({status}) em {tempo_decorrido:.1f}s")
+
+    # Reuniões alocadas e professores participantes
+    if ativa("DIAG_PLANEJAMENTO") and reuniao_vars:
+        PlanningDiagnostics(base).log_pos_solver(solver, reuniao_vars)
 
     # ======================================================
     # 7. RELATÓRIOS E EXPORTAÇÃO
