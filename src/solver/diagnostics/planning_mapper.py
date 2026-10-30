@@ -53,6 +53,7 @@ class PlanningMapper:
             return True
 
         self._log_janelas()
+        self._log_quadro_disponibilidade()
         self._log_mapa_grupos()
 
         viavel = self._mini_solver(self.planos)
@@ -104,7 +105,7 @@ class PlanningMapper:
 
             planos.append({
                 "nome": plan.nome,
-                "grupo": self._norm(getattr(plan, "grupo", None)) or f"_{plan.nome}",
+                "grupo": self._norm(getattr(plan, "grupo", None)) or "_" + str(plan.nome),
                 "participantes": participantes,
                 "viaveis": viaveis,
                 "bloqueadas": bloqueadas,
@@ -116,7 +117,7 @@ class PlanningMapper:
 
         for dia in self.dias:
 
-            aulas = self.aulas_por_dia[dia]
+            aulas = self.aulas_por_dia.get(dia, [])
 
             for inicio in aulas:
 
@@ -159,11 +160,12 @@ class PlanningMapper:
 
             total = len(p["viaveis"]) + len(p["bloqueadas"])
 
-            nivel = (
-                logging.error if not p["viaveis"]
-                else logging.warning if len(p["viaveis"]) <= 3
-                else logging.info
-            )
+            if not p["viaveis"]:
+                nivel = logging.error
+            elif len(p["viaveis"]) <= 3:
+                nivel = logging.warning
+            else:
+                nivel = logging.info
 
             nivel(
                 "   %s | Grupo: %s | Convocados: %s | Janelas viáveis: %s de %s",
@@ -187,6 +189,90 @@ class PlanningMapper:
 
                 for motivo, qtd in sorted(contagem.items(), key=lambda x: -x[1])[:5]:
                     nivel("      🚫 %s bloqueia %s janela(s)", motivo, qtd)
+
+    def _log_quadro_disponibilidade(self):
+
+        logging.info("")
+        logging.info("🟥 DISPONIBILIDADE COMBINADA DOS CONVOCADOS")
+        logging.info("   Legenda: . = slot livre para TODOS | X = pelo menos um convocado bloqueado")
+
+        pa_pv = self._slots_pa_pv_por_professor()
+        max_aulas = max(len(a) for a in self.aulas_por_dia.values())
+
+        for p in sorted(self.planos, key=lambda x: len(x["viaveis"])):
+
+            participantes = sorted(p["participantes"])
+
+            bloqueios = {
+                prof: self._bloqueios_combinados(prof, pa_pv)
+                for prof in participantes
+            }
+
+            logging.info("")
+            logging.info(
+                "   📌 %s | Grupo: %s | Convocados: %s",
+                p["nome"],
+                p["grupo"],
+                len(participantes),
+            )
+
+            logging.info("      AULA | " + " | ".join(d.center(4) for d in self.dias))
+
+            slots_livres = 0
+            total_slots = 0
+            culpados = defaultdict(int)
+
+            for aula in range(1, max_aulas + 1):
+
+                linha = []
+
+                for dia in self.dias:
+
+                    aulas_do_dia = self.aulas_por_dia.get(dia, [])
+
+                    if aula not in aulas_do_dia:
+                        linha.append("-".center(4))
+                        continue
+
+                    total_slots += 1
+                    slot = f"{dia}_{aula}"
+
+                    bloqueados = [
+                        prof for prof in participantes
+                        if slot in bloqueios[prof]
+                    ]
+
+                    if bloqueados:
+                        marca = "X"
+                        for prof in bloqueados:
+                            culpados[prof] += 1
+                    else:
+                        marca = "."
+                        slots_livres += 1
+
+                    linha.append(marca.center(4))
+
+                logging.info("       %s   | %s", aula, " | ".join(linha))
+
+            if slots_livres < 2:
+                nivel = logging.error
+            elif slots_livres <= 6:
+                nivel = logging.warning
+            else:
+                nivel = logging.info
+
+            nivel(
+                "      Slots livres para todos: %s de %s",
+                slots_livres,
+                total_slots,
+            )
+
+            if culpados:
+                ranking = sorted(culpados.items(), key=lambda x: -x[1])[:5]
+                logging.info(
+                    "      Professores que geram os X: %s",
+                    ", ".join(f"{prof} ({qtd} slots)" for prof, qtd in ranking),
+                )
 
     def _log_mapa_grupos(self):
 
@@ -212,7 +298,7 @@ class PlanningMapper:
                 demanda,
             )
 
-            logging.info("      AULA | " + " | ".join(f"{d:^4}" for d in self.dias))
+            logging.info("      AULA | " + " | ".join(d.center(4) for d in self.dias))
 
             for aula in range(1, max_aulas + 1):
 
@@ -227,7 +313,7 @@ class PlanningMapper:
                         if any(slot in s for s in p["viaveis"].values())
                     )
 
-                    linha.append(f"{qtd:^4}")
+                    linha.append(str(qtd).center(4))
 
                 logging.info("       %s   | %s", aula, " | ".join(linha))
 
@@ -328,6 +414,74 @@ class PlanningMapper:
             )
 
     # ==================================================
+    # BLOQUEIOS
+    # ==================================================
+
+    def _slots_pa_pv_por_professor(self):
+
+        projetos = defaultdict(dict)
+
+        for r in getattr(self.base, "restricoes", []) or []:
+
+            regra = self._norm(r.regra)
+
+            if not (regra.startswith("PA_") or regra.startswith("PV_")):
+                continue
+
+            partes = regra.split("_")
+
+            if len(partes) < 3:
+                continue
+
+            tipo = partes[0]
+            ano = partes[1][:-2] if partes[1].endswith(".0") else partes[1]
+            prop = "_".join(partes[2:])
+
+            projetos[(ano, tipo)][prop] = self._norm(r.valor)
+
+        slots_por_ano = defaultdict(set)
+
+        for (ano, _), props in projetos.items():
+
+            try:
+                dia = props["DIA"]
+                ini = int(float(props["AULA_INICIAL"]))
+                fim = int(float(props["AULA_FINAL"]))
+            except (KeyError, ValueError):
+                continue
+
+            for aula in range(ini, fim + 1):
+                slots_por_ano[ano].add(f"{dia}_{aula}")
+
+        resultado = defaultdict(set)
+
+        for prof in getattr(self.base, "professores", []) or []:
+
+            nome = self._norm(getattr(prof, "nome", ""))
+            anos = self._norm(getattr(prof, "anos_atuacao", ""))
+
+            if not nome or anos in self.INVALIDOS:
+                continue
+
+            for ano in anos.split(","):
+
+                ano = ano.strip()
+                ano = ano[:-2] if ano.endswith(".0") else ano
+
+                resultado[nome] |= slots_por_ano.get(ano, set())
+
+        return resultado
+
+    def _bloqueios_combinados(self, prof, pa_pv):
+
+        return (
+            self.bloqueios.get(prof, set())
+            | self.fixos.get(prof, set())
+            | self.avulsas.get(prof, set())
+            | pa_pv.get(prof, set())
+        )
+
+    # ==================================================
     # APOIO
     # ==================================================
 
@@ -361,16 +515,16 @@ class PlanningMapper:
 
         for alvo, valores in regras.items():
 
-            if not {"DIA", "AULA_INICIAL", "AULA_FINAL"} <= set(valores):
+            if not {"DIA", "AULA_INICIAL", "AULA_FINAL"}.issubset(valores):
                 continue
 
-            slots = {
-                f"{valores['DIA']}_{a}"
-                for a in range(
-                    int(float(valores["AULA_INICIAL"])),
-                    int(float(valores["AULA_FINAL"])) + 1,
-                )
-            }
+            try:
+                ini = int(float(valores["AULA_INICIAL"]))
+                fim = int(float(valores["AULA_FINAL"]))
+            except ValueError:
+                continue
+
+            slots = {f"{valores['DIA']}_{a}" for a in range(ini, fim + 1)}
 
             for (turma, esp), profs in self.mapa_professores.items():
                 if esp == alvo:

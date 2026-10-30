@@ -39,6 +39,7 @@ from src.solver.diagnostics.preflight_validator import PreflightValidator
 from src.solver.diagnostics.planning_diagnostics import PlanningDiagnostics
 from src.solver.diagnostics.planning_mapper import PlanningMapper
 
+
 # ==========================================================
 # PAINEL DE CAMADAS (LIGA / DESLIGA)
 # ==========================================================
@@ -46,7 +47,9 @@ from src.solver.diagnostics.planning_mapper import PlanningMapper
 CAMADAS = {
     # Diagnóstico
     "PREFLIGHT": True,
+    "DIAG_DIAS_TRAVADOS": True,
     "DIAG_PLANEJAMENTO": True,
+    "MAPA_PLANEJAMENTO": True,
 
     # Restrições rígidas
     "RULE_ENGINE": True,
@@ -57,16 +60,15 @@ CAMADAS = {
     "PLANEJAMENTO_COLETIVO": True,
     "PLANEJAMENTO_INDIVIDUAL": True,
     "ATIVIDADES_AVULSAS": True,
-    "MAX_DIAS": True,
-    "MAPA_PLANEJAMENTO": True,
+    "MAX_DIAS": False,
 
     # Objetivos
-    "OBJ_COMPACTACAO_AREAS": True,
-    "OBJ_COMPACTACAO_PROFESSORES": True,
+    "OBJ_COMPACTACAO_AREAS": False,
+    "OBJ_COMPACTACAO_PROFESSORES": False,
 }
 
 # None = usa o tempo da planilha. Ex.: 600 para testes de 10 minutos.
-TEMPO_MAX_TESTE = None
+TEMPO_MAX_TESTE = 300
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -84,6 +86,54 @@ def log_camadas():
         logging.info(f"   {'🟢 ON ' if ligada else '🔴 OFF'} | {nome}")
     if TEMPO_MAX_TESTE:
         logging.info(f"   ⏱️ Tempo máximo de teste: {TEMPO_MAX_TESTE}s")
+    logging.info("=" * 60)
+
+
+def diagnosticar_dias_travados(base):
+
+    logging.info("=" * 60)
+    logging.info("📆 DIAS TRAVADOS POR PA/PV x MAX DIAS")
+    logging.info("=" * 60)
+
+    try:
+        fantasmas = MaxDiasConstraint(
+            None,
+            {},
+            base,
+            reuniao_vars={},
+            plan_ind_vars={},
+        )._mapear_fantasmas()
+    except Exception:
+        logging.exception("❌ Não foi possível mapear os dias de PA/PV.")
+        return
+
+    criticos = 0
+
+    for prof in base.professores:
+
+        nome = str(prof.nome).strip().upper()
+        travados = fantasmas.get(nome, set())
+
+        try:
+            max_dias = int(float(prof.max_dias))
+        except (TypeError, ValueError):
+            continue
+
+        livres = max_dias - len(travados)
+
+        if livres <= 1:
+            criticos += 1
+            logging.warning(
+                f"   ⚠️ {nome} | Max Dias: {max_dias} "
+                f"| Travados por PA/PV: {sorted(travados)} "
+                f"| Livres p/ aulas e reuniões: {livres}"
+            )
+
+    if criticos:
+        logging.warning(f"   Professores com 1 dia livre ou menos: {criticos}")
+    else:
+        logging.info("   ✅ Nenhum professor com dias críticos.")
+
     logging.info("=" * 60)
 
 
@@ -118,20 +168,23 @@ def main(input_excel: str, target_turma: str):
 
     analise_atribuicao = PedagogicalPairsAnalyzer(base).analisar()
 
+    if ativa("DIAG_DIAS_TRAVADOS"):
+        diagnosticar_dias_travados(base)
+
     # ======================================================
     # 3. CONSTRUÇÃO DO MODELO
     # ======================================================
 
     base.blocos = PedagogicalBlockBuilder(base).build()
 
-    #Mapeamento dos planejamentos coletivos
+    # Mapeamento dos planejamentos coletivos
     if ativa("MAPA_PLANEJAMENTO"):
 
         reunioes_cabem = PlanningMapper(base).run()
 
         if not reunioes_cabem and ativa("PLANEJAMENTO_COLETIVO"):
             logging.error("❌ As reuniões não cabem nem sozinhas. O solver principal não será executado.")
-            return    
+            return
 
     # Diagnóstico de planejamento (roda mesmo com a camada desligada)
     if ativa("DIAG_PLANEJAMENTO"):
@@ -268,6 +321,19 @@ def main(input_excel: str, target_turma: str):
         return
 
     logging.info(f"✅ Solução encontrada ({status}) em {tempo_decorrido:.1f}s")
+    
+    dias_por_prof = {}
+
+    for dia_aula, entradas in []:
+        pass
+
+    for turma in grid.turmas():
+        for slot in base.slots:
+            cell = grid.get(turma, slot.dia, slot.aula)
+            if cell and cell.professor:
+                prof = str(cell.professor).strip().upper()
+                dias_por_prof.setdefault(prof, set()).add(slot.dia)
+    
 
     # Reuniões alocadas e professores participantes
     if ativa("DIAG_PLANEJAMENTO") and reuniao_vars:
