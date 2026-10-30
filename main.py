@@ -2,6 +2,7 @@ import argparse
 import logging
 import threading
 import time
+from collections import defaultdict
 from datetime import datetime
 
 from ortools.sat.python import cp_model
@@ -50,6 +51,7 @@ CAMADAS = {
     "DIAG_DIAS_TRAVADOS": True,
     "DIAG_PLANEJAMENTO": True,
     "MAPA_PLANEJAMENTO": True,
+    "DIAG_DIAS_USADOS": True,
 
     # Restrições rígidas
     "RULE_ENGINE": True,
@@ -60,7 +62,8 @@ CAMADAS = {
     "PLANEJAMENTO_COLETIVO": True,
     "PLANEJAMENTO_INDIVIDUAL": True,
     "ATIVIDADES_AVULSAS": True,
-    "MAX_DIAS": False,
+    "MAX_DIAS": True,
+    "MAX_DIAS_FLEXIVEL": False,   # True = excesso vira penalidade | False = limite rígido
 
     # Objetivos
     "OBJ_COMPACTACAO_AREAS": False,
@@ -68,7 +71,10 @@ CAMADAS = {
 }
 
 # None = usa o tempo da planilha. Ex.: 600 para testes de 10 minutos.
-TEMPO_MAX_TESTE = 300
+TEMPO_MAX_TESTE = 600
+
+# Peso de cada dia acima do Max Dias (bem maior que os pesos de compactação)
+PESO_EXCESSO_DIAS = 10000
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -89,14 +95,10 @@ def log_camadas():
     logging.info("=" * 60)
 
 
-def diagnosticar_dias_travados(base):
-
-    logging.info("=" * 60)
-    logging.info("📆 DIAS TRAVADOS POR PA/PV x MAX DIAS")
-    logging.info("=" * 60)
+def mapear_dias_pa_pv(base):
 
     try:
-        fantasmas = MaxDiasConstraint(
+        return MaxDiasConstraint(
             None,
             {},
             base,
@@ -105,7 +107,21 @@ def diagnosticar_dias_travados(base):
         )._mapear_fantasmas()
     except Exception:
         logging.exception("❌ Não foi possível mapear os dias de PA/PV.")
+        return None
+
+
+def diagnosticar_dias_travados(base):
+
+    logging.info("=" * 60)
+    logging.info("📆 DIAS TRAVADOS POR PA/PV x MAX DIAS")
+    logging.info("=" * 60)
+
+    fantasmas = mapear_dias_pa_pv(base)
+
+    if fantasmas is None:
         return
+
+    logging.info(f"   Professores com PA/PV mapeado: {len(fantasmas)}")
 
     criticos = 0
 
@@ -133,6 +149,101 @@ def diagnosticar_dias_travados(base):
         logging.warning(f"   Professores com 1 dia livre ou menos: {criticos}")
     else:
         logging.info("   ✅ Nenhum professor com dias críticos.")
+
+    logging.info("=" * 60)
+
+
+def diagnosticar_dias_usados(base, grid, solver, reuniao_vars):
+
+    logging.info("=" * 60)
+    logging.info("📆 DIAS USADOS x MAX DIAS (aulas + reuniões + PA/PV)")
+    logging.info("=" * 60)
+
+    dias_aulas = defaultdict(set)
+    dias_reunioes = defaultdict(set)
+    dias_pa_pv = defaultdict(set)
+
+    # 1. Aulas do horário gerado
+    for turma in base.turmas:
+
+        codigo = turma.codigo
+
+        for slot in base.slots:
+
+            try:
+                cell = grid.get(codigo, slot.dia, slot.aula)
+            except Exception:
+                cell = None
+
+            professor = getattr(cell, "professor", None) if cell else None
+
+            if professor:
+                dias_aulas[str(professor).strip().upper()].add(
+                    str(slot.dia).strip().upper()
+                )
+
+    # 2. Reuniões alocadas, só para os convocados
+    if reuniao_vars:
+
+        diag = PlanningDiagnostics(base)
+        planos = {p.nome: p for p in getattr(base, "planejamentos", []) or []}
+
+        for nome, slots in reuniao_vars.items():
+
+            dias_ativos = {
+                slot_id.split("_")[0].strip().upper()
+                for slot_id, var in slots.items()
+                if solver.Value(var) == 1
+            }
+
+            plan = planos.get(nome)
+
+            if not plan:
+                continue
+
+            for prof in diag._participantes(plan):
+                dias_reunioes[prof] |= dias_ativos
+
+    # 3. PA/PV do ano em que atua
+    fantasmas = mapear_dias_pa_pv(base) or {}
+
+    for prof, dias in fantasmas.items():
+        dias_pa_pv[str(prof).strip().upper()] |= {
+            str(d).strip().upper() for d in dias
+        }
+
+    # 4. Comparação com Max Dias
+    limites = {}
+
+    for p in base.professores:
+        try:
+            limites[str(p.nome).strip().upper()] = int(float(p.max_dias))
+        except (TypeError, ValueError):
+            continue
+
+    estouros = 0
+
+    for prof in sorted(limites):
+
+        limite = limites[prof]
+
+        aulas = dias_aulas.get(prof, set())
+        reunioes = dias_reunioes.get(prof, set())
+        pa_pv = dias_pa_pv.get(prof, set())
+
+        total = aulas | reunioes | pa_pv
+
+        if len(total) > limite:
+            estouros += 1
+            logging.warning(
+                f"   ⚠️ {prof} | Max Dias: {limite} | Usados: {len(total)} {sorted(total)} "
+                f"| Aulas: {sorted(aulas)} | Reuniões: {sorted(reunioes)} | PA/PV: {sorted(pa_pv)}"
+            )
+
+    if estouros:
+        logging.warning(f"   Professores acima do Max Dias: {estouros} de {len(limites)}")
+    else:
+        logging.info("   ✅ Nenhum professor passou do Max Dias nesta solução.")
 
     logging.info("=" * 60)
 
@@ -235,14 +346,18 @@ def main(input_excel: str, target_turma: str):
     if ativa("ATIVIDADES_AVULSAS"):
         AtividadesAvulsasConstraint(model, variables, base).build()
 
+    max_dias_constraint = None
+
     if ativa("MAX_DIAS"):
-        MaxDiasConstraint(
+        max_dias_constraint = MaxDiasConstraint(
             model,
             variables,
             base,
             reuniao_vars=reuniao_vars,
             plan_ind_vars=plan_ind_vars,
-        ).build()
+            flexivel=ativa("MAX_DIAS_FLEXIVEL"),
+        )
+        max_dias_constraint.build()
 
     if ativa("DISPONIBILIDADE"):
         TeacherAvailabilityConstraint(model, variables, base).build()
@@ -252,6 +367,7 @@ def main(input_excel: str, target_turma: str):
     # ======================================================
 
     objective_builder = ObjectiveBuilder(model, variables, base, regras)
+    usar_objetivo = False
 
     if ativa("OBJ_COMPACTACAO_AREAS"):
         AreaCompactnessObjective(
@@ -261,6 +377,7 @@ def main(input_excel: str, target_turma: str):
             regras=regras,
             objective_builder=objective_builder,
         ).build()
+        usar_objetivo = True
 
     if ativa("OBJ_COMPACTACAO_PROFESSORES"):
         TeacherCompactnessObjective(
@@ -270,8 +387,26 @@ def main(input_excel: str, target_turma: str):
             regras=regras,
             objective_builder=objective_builder,
         ).build()
+        usar_objetivo = True
 
-    if ativa("OBJ_COMPACTACAO_AREAS") or ativa("OBJ_COMPACTACAO_PROFESSORES"):
+    # Penalidade de excesso de dias (Max Dias flexível)
+    if max_dias_constraint and max_dias_constraint.flexivel and max_dias_constraint.excessos:
+
+        for prof, info in max_dias_constraint.excessos.items():
+            objective_builder.add_term(
+                expression=info["var"],
+                peso=-PESO_EXCESSO_DIAS,
+                descricao=f"EXCESSO DIAS {prof}",
+            )
+
+        usar_objetivo = True
+
+        logging.info(
+            f"⚖️ Penalidade de excesso de dias aplicada a "
+            f"{len(max_dias_constraint.excessos)} professores (peso {PESO_EXCESSO_DIAS})."
+        )
+
+    if usar_objetivo:
         objective_builder.build()
         objective_builder.imprimir_resumo()
     else:
@@ -321,19 +456,10 @@ def main(input_excel: str, target_turma: str):
         return
 
     logging.info(f"✅ Solução encontrada ({status}) em {tempo_decorrido:.1f}s")
-    
-    dias_por_prof = {}
 
-    for dia_aula, entradas in []:
-        pass
-
-    for turma in grid.turmas():
-        for slot in base.slots:
-            cell = grid.get(turma, slot.dia, slot.aula)
-            if cell and cell.professor:
-                prof = str(cell.professor).strip().upper()
-                dias_por_prof.setdefault(prof, set()).add(slot.dia)
-    
+    # Excessos de dias (modo flexível)
+    if max_dias_constraint and max_dias_constraint.flexivel:
+        max_dias_constraint.log_excessos(solver)
 
     # Reuniões alocadas e professores participantes
     if ativa("DIAG_PLANEJAMENTO") and reuniao_vars:
@@ -352,6 +478,10 @@ def main(input_excel: str, target_turma: str):
         reuniao_vars=reuniao_vars,
         variables=variables,
     ).build()
+
+    # Dias realmente usados por professor (depende do grid)
+    if ativa("DIAG_DIAS_USADOS"):
+        diagnosticar_dias_usados(base, grid, solver, reuniao_vars)
 
     PedagogicalPairsReporter(
         solver=solver,
